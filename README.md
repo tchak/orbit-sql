@@ -1,4 +1,4 @@
-# orbit-sql
+# orbit-sql [![Build Status](https://travis-ci.com/tchak/orbit-sql.svg?branch=master)](https://travis-ci.com/tchak/orbit-sql)
 
 SQL support for server-side Orbit applications.
 
