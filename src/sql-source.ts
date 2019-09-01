@@ -21,6 +21,7 @@ const { assert } = Orbit;
 
 export interface SQLSourceSettings extends SourceSettings {
   knex?: Knex.Config;
+  autoMigrate?: boolean;
 }
 
 /**
@@ -58,13 +59,15 @@ export default class SQLSource extends Source
     );
 
     settings.name = settings.name || 'sql';
+    const autoActivate = settings.autoActivate;
     settings.autoActivate = false;
 
     super(settings);
 
     let cacheSettings: SQLCacheSettings = {
       knex: settings.knex as Knex.Config,
-      schema: settings.schema as Schema
+      schema: settings.schema as Schema,
+      autoMigrate: settings.autoMigrate
     };
     cacheSettings.keyMap = settings.keyMap;
     cacheSettings.queryBuilder =
@@ -74,7 +77,10 @@ export default class SQLSource extends Source
     cacheSettings.knex = cacheSettings.knex || settings.knex;
 
     this._cache = new SQLCache(cacheSettings);
-    this.activate();
+
+    if (autoActivate !== false) {
+      this.activate();
+    }
   }
 
   get cache(): SQLCache {

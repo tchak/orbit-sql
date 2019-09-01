@@ -1,0 +1,68 @@
+import { Record as OrbitRecord, Schema } from '@orbit/data';
+import { tableize, underscore, foreignKey } from 'inflected';
+import { BaseModel } from './build-models';
+
+export function tableizeJoinTable(table1: string, table2: string) {
+  return [tableize(table1), tableize(table2)].sort().join('_');
+}
+
+export function toOrbitRecord(model: BaseModel): OrbitRecord {
+  const record: OrbitRecord = {
+    type: model.orbitType,
+    id: model.id,
+    attributes: {},
+    relationships: {}
+  };
+  const { orbitType: type, orbitSchema: schema } = model;
+
+  const result = model.toJSON() as any;
+  schema.eachAttribute(type, (property, attribute) => {
+    if (result[property] != null) {
+      (record.attributes as Record<string, unknown>)[
+        property
+      ] = castAttributeValue(result[property], attribute.type);
+    }
+  });
+
+  schema.eachRelationship(type, (property, { type: kind, model: type }) => {
+    if (kind === 'hasOne') {
+      (record.relationships as Record<string, unknown>)[property] = {
+        data: {
+          type: type as string,
+          id: result[`${property}Id`] as string
+        }
+      };
+    }
+  });
+
+  return record;
+}
+
+export function castAttributeValue(value: unknown, type?: string) {
+  const typeOfValue = typeof value;
+  const isString = typeOfValue === 'string';
+  const isNumber = typeOfValue === 'number';
+  if (type === 'boolean') {
+    return value === 1;
+  } else if (type === 'datetime' && (isString || isNumber)) {
+    return new Date(value as string | number);
+  }
+  return value;
+}
+
+export function fieldsForType(schema: Schema, type: string) {
+  const tableName = tableize(type);
+  const fields: string[] = [`${tableName}.id`];
+
+  schema.eachAttribute(type, property => {
+    fields.push(`${tableName}.${underscore(property)}`);
+  });
+
+  schema.eachRelationship(type, (property, { type: kind }) => {
+    if (kind === 'hasOne') {
+      fields.push(`${tableName}.${foreignKey(property)}`);
+    }
+  });
+
+  return fields;
+}

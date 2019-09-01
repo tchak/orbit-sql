@@ -1,16 +1,18 @@
-import { Record as OrbitRecord, RecordIdentity, Schema } from '@orbit/data';
+import { Record as OrbitRecord, RecordIdentity } from '@orbit/data';
 import {
   RecordRelationshipIdentity,
   AsyncRecordCache,
   AsyncRecordCacheSettings
 } from '@orbit/record-cache';
 import Knex from 'knex';
-import { underscore, foreignKey, tableize } from 'inflected';
 
-const UPDATED_AT = 'updated_at';
+import { ModelRegistry, buildModels, BaseModel } from './build-models';
+import { migrateModels } from './migrate-models';
+import { fieldsForType } from './utils';
 
 export interface SQLCacheSettings extends AsyncRecordCacheSettings {
   knex: Knex.Config;
+  autoMigrate?: boolean;
 }
 
 /**
@@ -21,12 +23,16 @@ export interface SQLCacheSettings extends AsyncRecordCacheSettings {
 export default class SQLCache extends AsyncRecordCache {
   protected _config: Knex.Config;
   protected _db: Knex;
+  protected _models: ModelRegistry;
+
+  autoMigrate: boolean;
 
   constructor(settings: SQLCacheSettings) {
     super(settings);
 
+    this.autoMigrate = settings.autoMigrate !== false;
     this._config = settings.knex;
-    this._config.postProcessResponse = postProcessResponse;
+    this._models = buildModels(this.schema);
   }
 
   get config(): Knex.Config {
@@ -55,10 +61,19 @@ export default class SQLCache extends AsyncRecordCache {
   async openDB(): Promise<any> {
     if (!this.isDBOpen) {
       const db = Knex(this._config);
-      await this.createDB(db);
+      if (this.autoMigrate) {
+        await this.createDB(db);
+      }
+      this.connectDB(db);
       this._db = db;
     }
     return this._db;
+  }
+
+  connectDB(db: Knex) {
+    for (let type of Object.keys(this._models)) {
+      this._models[type] = this._models[type].bindKnex(db);
+    }
   }
 
   async closeDB(): Promise<void> {
@@ -73,108 +88,26 @@ export default class SQLCache extends AsyncRecordCache {
   }
 
   async createDB(db: Knex): Promise<void> {
-    for (let model in this.schema.models) {
-      await this.registerModel(db, model);
-    }
+    await migrateModels(db, this.schema);
   }
 
   async deleteDB(): Promise<void> {
     await this.closeDB();
   }
 
-  async registerModel(db: Knex, type: string) {
-    const tableName = tableize(type);
-    const joinTables: Record<string, [string, string]> = {};
-
-    if (!(await db.schema.hasTable(tableName))) {
-      await db.schema.createTable(tableName, table => {
-        table.uuid('id').primary();
-        table.timestamps(true, true);
-
-        this.schema.eachAttribute(type, (property, attribute) => {
-          if (!['updatedAt', 'createdAt'].includes(property)) {
-            let columnName = underscore(property);
-            switch (attribute.type) {
-              case 'string':
-                table.string(columnName);
-                break;
-              case 'number':
-                table.integer(columnName);
-                break;
-              case 'boolean':
-                table.boolean(columnName);
-                break;
-              case 'date':
-                table.date(columnName);
-                break;
-              case 'datetime':
-                table.dateTime(columnName);
-                break;
-            }
-          }
-        });
-
-        this.schema.eachRelationship(
-          type,
-          (property, { type: kind, model: type, inverse }) => {
-            const columnName = foreignKey(property);
-            if (kind === 'hasOne') {
-              table.uuid(columnName);
-            } else {
-              if (!inverse || !type) {
-                throw new Error(
-                  `SQLSource: "type" and "inverse" are required on a relationship`
-                );
-              }
-
-              if (Array.isArray(type)) {
-                throw new Error(
-                  `SQLSource: polymorphic types are not supported yet`
-                );
-              }
-
-              let { type: inverseKind } = this.schema.getRelationship(
-                type,
-                inverse
-              );
-
-              if (inverseKind === 'hasMany') {
-                joinTables[tableizeJoinTableName(property, inverse)] = [
-                  columnName,
-                  foreignKey(inverse)
-                ];
-              }
-            }
-          }
-        );
-      });
-    }
-
-    for (let joinTableName in joinTables) {
-      if (!(await db.schema.hasTable(joinTableName))) {
-        await db.schema.createTable(joinTableName, table => {
-          table.uuid(joinTables[joinTableName][0]);
-          table.uuid(joinTables[joinTableName][1]);
-        });
-      }
-    }
-  }
-
   async clearRecords(type: string): Promise<void> {
-    await this.scopeForType(type).del();
+    await this.queryBuilderForType(type).del();
   }
 
-  async getRecordAsync(identity: RecordIdentity): Promise<OrbitRecord> {
-    return new Promise(async resolve => {
-      const fields = this.fieldsForType(identity.type);
-      const record = await this.scopeForType(identity.type)
-        .where('id', identity.id)
-        .first(fields);
-      if (record) {
-        resolve(record);
-      }
-      resolve();
-    });
+  async getRecordAsync(identity: RecordIdentity) {
+    const fields = fieldsForType(this.schema, identity.type);
+    const record = await this.queryBuilderForType(identity.type)
+      .findById(identity.id)
+      .select(fields);
+    if (record) {
+      return record.toOrbitRecord();
+    }
+    return;
   }
 
   async getRecordsAsync(
@@ -187,8 +120,11 @@ export default class SQLCache extends AsyncRecordCache {
         records = records.concat(await this.getRecordsAsync(type));
       }
     } else if (typeof typeOrIdentities === 'string') {
-      let fields = this.fieldsForType(typeOrIdentities);
-      records = await this.scopeForType(typeOrIdentities).select(fields);
+      let fields = fieldsForType(this.schema, typeOrIdentities);
+      let models = await this.queryBuilderForType(typeOrIdentities).select(
+        fields
+      );
+      records = models.map(model => model.toOrbitRecord());
     } else if (Array.isArray(typeOrIdentities)) {
       const identities: RecordIdentity[] = typeOrIdentities;
 
@@ -197,11 +133,11 @@ export default class SQLCache extends AsyncRecordCache {
         const recordsById: Record<string, OrbitRecord> = {};
 
         for (let type in idsByType) {
-          let fields = this.fieldsForType(type);
-          for (let record of await this.scopeForType(type)
-            .whereIn('id', idsByType[type])
+          let fields = fieldsForType(this.schema, type);
+          for (let record of await this.queryBuilderForType(type)
+            .findByIds(idsByType[type])
             .select(fields)) {
-            recordsById[record.id] = record;
+            recordsById[record.id] = record.toOrbitRecord();
           }
         }
         for (let identity of identities) {
@@ -213,37 +149,13 @@ export default class SQLCache extends AsyncRecordCache {
   }
 
   async setRecordAsync(record: OrbitRecord): Promise<void> {
-    const [{ id, ...properties }, relationships] = this.toProperties(record);
+    const properties = this.toProperties(record);
 
-    if (
-      await this.scopeForType(record.type)
-        .where('id', id)
-        .first('id')
-    ) {
-      const now = this._db.raw('CURRENT_TIMESTAMP');
-      await this.scopeForType(record.type)
-        .where({ id })
-        .update({ ...properties, [UPDATED_AT]: now });
-    } else {
-      await this.scopeForType(record.type).insert({ id, ...properties });
-    }
-
-    for (let tableName in relationships) {
-      let [from, to, identities] = relationships[tableName];
-      await this._db(tableName)
-        .where({ [to]: id })
-        .del();
-      if (identities.length > 0) {
-        let insert = [];
-        for (let identity of identities) {
-          insert.push({
-            [from]: identity.id,
-            [to]: id
-          });
-        }
-        await this._db(tableName).insert(insert);
-      }
-    }
+    await this.queryBuilderForType(record.type).upsertGraph(properties, {
+      insertMissing: true,
+      relate: true,
+      unrelate: true
+    });
   }
 
   async setRecordsAsync(records: OrbitRecord[]): Promise<void> {
@@ -261,9 +173,7 @@ export default class SQLCache extends AsyncRecordCache {
     const records = await this.getRecordsAsync(identities);
     const idsByType = groupIdentitiesByType(records);
     for (let type in idsByType) {
-      await this.scopeForType(type)
-        .whereIn('id', idsByType[type])
-        .del();
+      await this.queryBuilderForType(type).deleteById(idsByType[type]);
     }
     return records;
   }
@@ -271,34 +181,27 @@ export default class SQLCache extends AsyncRecordCache {
   async getRelatedRecordAsync(
     identity: RecordIdentity,
     relationship: string
-  ): Promise<RecordIdentity> {
-    return new Promise(async resolve => {
-      if (this.schema.hasRelationship(identity.type, relationship)) {
+  ): Promise<RecordIdentity | null> {
+    if (this.schema.hasRelationship(identity.type, relationship)) {
+      const parent = await this.queryBuilderForType(identity.type).findById(
+        identity.id
+      );
+
+      if (parent) {
         const { model: type } = this.schema.getRelationship(
           identity.type,
           relationship
         );
-
-        if (!type) {
-          throw new Error(`SQLSource: "type" is required on a relationship`);
+        const query = parent
+          .$relatedQuery<BaseModel, BaseModel[]>(relationship)
+          .select(fieldsForType(this.schema, type as string));
+        const model = ((await query) as any) as (BaseModel | undefined);
+        if (model) {
+          return model.toOrbitRecord();
         }
-
-        if (Array.isArray(type)) {
-          throw new Error(`SQLSource: polymorphic types are not supported yet`);
-        }
-
-        const fields = this.fieldsForType(type);
-        const record = await this.scopeForType(type)
-          .join(
-            tableize(identity.type),
-            `${tableize(type)}.id`,
-            `${tableize(identity.type)}.${foreignKey(relationship)}`
-          )
-          .where(`${tableize(identity.type)}.id`, identity.id)
-          .first(fields);
-        resolve(record);
       }
-    });
+    }
+    return null;
   }
 
   async getRelatedRecordsAsync(
@@ -306,39 +209,20 @@ export default class SQLCache extends AsyncRecordCache {
     relationship: string
   ): Promise<RecordIdentity[]> {
     if (this.schema.hasRelationship(identity.type, relationship)) {
-      const relationshipDef = this.schema.getRelationship(
-        identity.type,
-        relationship
+      const parent = await this.queryBuilderForType(identity.type).findById(
+        identity.id
       );
-      const type = relationshipDef.model;
-      const inverse = relationshipDef.inverse;
 
-      if (!inverse || !type) {
-        throw new Error(
-          `SQLSource: "type" and "inverse" are required on a relationship`
+      if (parent) {
+        const { model: type } = this.schema.getRelationship(
+          identity.type,
+          relationship
         );
-      }
-
-      if (Array.isArray(type)) {
-        throw new Error(`SQLSource: polymorphic types are not supported yet`);
-      }
-
-      const { type: inverseKind } = this.schema.getRelationship(type, inverse);
-
-      if (inverseKind === 'hasOne') {
-        const fields = this.fieldsForType(type);
-        return this.scopeForType(type)
-          .where(foreignKey(inverse), identity.id)
-          .select(fields);
-      } else {
-        const joinTableName = tableizeJoinTableName(relationship, inverse);
-        return await this.scopeForType(type)
-          .join(
-            joinTableName,
-            `${tableize(type)}.id`,
-            `${joinTableName}.${foreignKey(relationship)}`
-          )
-          .where(`${joinTableName}.${foreignKey(inverse)}`, identity.id);
+        const query = parent
+          .$relatedQuery<BaseModel, BaseModel[]>(relationship)
+          .select(fieldsForType(this.schema, type as string));
+        const models = await query;
+        return models.map(model => model.toOrbitRecord());
       }
     }
     return [];
@@ -372,92 +256,40 @@ export default class SQLCache extends AsyncRecordCache {
     }
   }
 
-  protected scopeForType(type: string) {
-    return this._db(tableize(type)).queryContext({ type, schema: this.schema });
+  protected queryBuilderForType(type: string) {
+    return this._models[type].query();
   }
 
-  protected toProperties(
-    record: OrbitRecord
-  ): [
-    Record<string, unknown>,
-    Record<string, [string, string, RecordIdentity[]]>
-  ] {
+  protected toProperties(record: OrbitRecord) {
     const properties: Record<string, unknown> = {
       id: record.id
     };
-    const relationships: Record<
-      string,
-      [string, string, RecordIdentity[]]
-    > = {};
 
     if (record.attributes) {
       this.schema.eachAttribute(record.type, property => {
         if (record.attributes && record.attributes[property] !== undefined) {
-          properties[underscore(property)] = record.attributes[property];
+          properties[property] = record.attributes[property];
         }
       });
     }
 
     if (record.relationships) {
-      this.schema.eachRelationship(
-        record.type,
-        (property, { type: kind, model: type, inverse }) => {
-          if (record.relationships && record.relationships[property]) {
-            if (kind === 'hasOne') {
-              const data = record.relationships[property]
-                .data as RecordIdentity | null;
-              properties[foreignKey(property)] = data ? data.id : null;
-            } else {
-              if (!inverse || !type) {
-                throw new Error(
-                  `SQLSource: "type" and "inverse" are required on a relationship`
-                );
-              }
-
-              if (Array.isArray(type)) {
-                throw new Error(
-                  `SQLSource: polymorphic types are not supported yet`
-                );
-              }
-
-              const { type: inverseKind } = this.schema.getRelationship(
-                type,
-                inverse
-              );
-
-              if (inverseKind === 'hasMany') {
-                const data = record.relationships[property]
-                  .data as RecordIdentity[];
-                relationships[tableizeJoinTableName(property, inverse)] = [
-                  foreignKey(property),
-                  foreignKey(inverse),
-                  data
-                ];
-              }
-            }
+      this.schema.eachRelationship(record.type, (property, { type: kind }) => {
+        if (record.relationships && record.relationships[property]) {
+          if (kind === 'hasOne') {
+            const data = record.relationships[property]
+              .data as RecordIdentity | null;
+            properties[property] = data ? { id: data.id } : null;
+          } else {
+            const data = record.relationships[property]
+              .data as RecordIdentity[];
+            properties[property] = data.map(({ id }) => ({ id }));
           }
         }
-      );
+      });
     }
 
-    return [properties, relationships];
-  }
-
-  protected fieldsForType(type: string) {
-    const tableName = tableize(type);
-    const fields: string[] = [`${tableName}.id`];
-
-    this.schema.eachAttribute(type, property => {
-      fields.push(`${tableName}.${underscore(property)}`);
-    });
-
-    this.schema.eachRelationship(type, (property, { type: kind }) => {
-      if (kind === 'hasOne') {
-        fields.push(`${tableName}.${foreignKey(property)}`);
-      }
-    });
-
-    return fields;
+    return properties;
   }
 }
 
@@ -468,76 +300,4 @@ function groupIdentitiesByType(identities: RecordIdentity[]) {
     idsByType[identity.type].push(identity.id);
   }
   return idsByType;
-}
-
-type QueryResult = Record<string, unknown> | Record<string, unknown>[] | null;
-interface QueryContext {
-  type: string;
-  schema: Schema;
-}
-
-function postProcessResponse(result: QueryResult, context?: QueryContext) {
-  if (context) {
-    if (Array.isArray(result)) {
-      return result.map(result => queryResultToRecord(result, context));
-    } else if (result) {
-      return queryResultToRecord(result, context);
-    }
-
-    return null;
-  }
-  return result;
-}
-
-function queryResultToRecord(
-  result: Record<string, unknown>,
-  context: QueryContext
-): OrbitRecord {
-  const record: OrbitRecord = {
-    type: context.type,
-    id: result.id as string,
-    attributes: {},
-    relationships: {}
-  };
-
-  context.schema.eachAttribute(context.type, (property, attribute) => {
-    const propertyName = underscore(property);
-    if (result[propertyName] != null) {
-      (record.attributes as Record<string, unknown>)[
-        property
-      ] = castAttributeValue(result[propertyName], attribute.type);
-    }
-  });
-
-  context.schema.eachRelationship(
-    context.type,
-    (property, { type: kind, model: type }) => {
-      if (kind === 'hasOne') {
-        (record.relationships as Record<string, unknown>)[property] = {
-          data: {
-            type: type as string,
-            id: result[foreignKey(property)] as string
-          }
-        };
-      }
-    }
-  );
-
-  return record;
-}
-
-function castAttributeValue(value: unknown, type?: string) {
-  const typeOfValue = typeof value;
-  const isString = typeOfValue === 'string';
-  const isNumber = typeOfValue === 'number';
-  if (type === 'boolean') {
-    return value === 1;
-  } else if (type === 'datetime' && (isString || isNumber)) {
-    return new Date(value as string | number);
-  }
-  return value;
-}
-
-function tableizeJoinTableName(table1: string, table2: string) {
-  return [tableize(table1), tableize(table2)].sort().join('_');
 }
