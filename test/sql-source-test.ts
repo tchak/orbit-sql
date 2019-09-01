@@ -28,7 +28,7 @@ QUnit.module('sql source', function(hooks) {
     await source.activated;
   });
 
-  hooks.beforeEach(async function() {
+  hooks.afterEach(async function() {
     await source.deactivate();
   });
 
