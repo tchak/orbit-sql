@@ -14,8 +14,7 @@ import Orbit, {
 } from '@orbit/data';
 import Knex from 'knex';
 
-import SQLCache, { SQLCacheSettings } from './sql-cache';
-import Processor from './processor';
+import { Processor, ProcessorSettings } from './processor';
 
 const { assert } = Orbit;
 
@@ -30,7 +29,6 @@ export interface SQLSourceSettings extends SourceSettings {
 @queryable
 @updatable
 export default class SQLSource extends Source implements Queryable, Updatable {
-  protected _cache: SQLCache;
   protected _processor: Processor;
 
   // Queryable interface stubs
@@ -64,42 +62,27 @@ export default class SQLSource extends Source implements Queryable, Updatable {
 
     super(settings);
 
-    let cacheSettings: SQLCacheSettings = {
+    let processorSettings: ProcessorSettings = {
       knex: settings.knex as Knex.Config,
       schema: settings.schema as Schema,
       autoMigrate: settings.autoMigrate
     };
-    cacheSettings.keyMap = settings.keyMap;
-    cacheSettings.queryBuilder =
-      cacheSettings.queryBuilder || this.queryBuilder;
-    cacheSettings.transformBuilder =
-      cacheSettings.transformBuilder || this.transformBuilder;
-    cacheSettings.knex = cacheSettings.knex || settings.knex;
 
-    this._cache = new SQLCache(cacheSettings);
-    this._processor = new Processor(this);
+    this._processor = new Processor(processorSettings);
 
     if (autoActivate !== false) {
       this.activate();
     }
   }
 
-  get cache(): SQLCache {
-    return this._cache;
-  }
-
   async _activate() {
     await super._activate();
-    await this.cache.openDB();
+    await this._processor.openDB();
   }
 
   async deactivate() {
     await super.deactivate();
-    return this.cache.closeDB();
-  }
-
-  async upgrade(): Promise<void> {
-    await this._cache.reopenDB();
+    return this._processor.closeDB();
   }
 
   /////////////////////////////////////////////////////////////////////////////

@@ -18,19 +18,57 @@ import {
   AttributeSortSpecifier,
   OffsetLimitPageSpecifier,
   RecordIdentity,
-  AttributeFilterSpecifier
+  AttributeFilterSpecifier,
+  Schema
 } from '@orbit/data';
-import { QueryBuilder } from 'objection';
+import Knex, { Config } from 'knex';
+import { QueryBuilder, ModelClass } from 'objection';
+import { tableize, underscore, foreignKey } from 'inflected';
 
-import { toJSON, fieldsForType } from './utils';
-import SQLSource from './sql-source';
-import { BaseModel } from './build-models';
+import { BaseModel, buildModels } from './build-models';
+import { migrateModels } from './migrate-models';
+import { groupIdentitiesByType } from './utils';
 
-export default class Processor {
-  source: SQLSource;
+export interface ProcessorSettings {
+  schema: Schema;
+  knex: Config;
+  autoMigrate?: boolean;
+}
 
-  constructor(source: SQLSource) {
-    this.source = source;
+export class Processor {
+  schema: Schema;
+  autoMigrate: boolean;
+
+  protected _config: Config;
+  protected _db?: Knex;
+  protected _models: Record<string, ModelClass<BaseModel>>;
+
+  constructor(settings: ProcessorSettings) {
+    this.schema = settings.schema;
+    this.autoMigrate = settings.autoMigrate !== false;
+
+    this._config = settings.knex;
+    this._models = buildModels(this.schema);
+  }
+
+  async openDB(): Promise<any> {
+    if (!this._db) {
+      const db = Knex(this._config);
+      if (this.autoMigrate) {
+        await migrateModels(db, this.schema);
+      }
+      for (let type of Object.keys(this._models)) {
+        this._models[type] = this._models[type].bindKnex(db);
+      }
+      this._db = db;
+    }
+    return this._db;
+  }
+
+  async closeDB(): Promise<void> {
+    if (this._db) {
+      await this._db.destroy();
+    }
   }
 
   async patch(operations: RecordOperation[]) {
@@ -80,8 +118,8 @@ export default class Processor {
   }
 
   protected async addRecord(op: AddRecordOperation) {
-    const qb = this.queryBuilderForType(op.record.type);
-    const data = this.toJSON(op.record);
+    const qb = this.queryForType(op.record.type);
+    const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
       insertMissing: true,
@@ -93,8 +131,8 @@ export default class Processor {
   }
 
   protected async updateRecord(op: UpdateRecordOperation) {
-    const qb = this.queryBuilderForType(op.record.type);
-    const data = this.toJSON(op.record);
+    const qb = this.queryForType(op.record.type);
+    const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
       relate: true,
@@ -106,7 +144,7 @@ export default class Processor {
 
   protected async removeRecord(op: RemoveRecordOperation) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
 
     const model = (await qb.findById(id)) as BaseModel;
     await qb.deleteById(id);
@@ -116,7 +154,7 @@ export default class Processor {
 
   protected async replaceAttribute(op: ReplaceAttributeOperation) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
 
     const model = await qb.patchAndFetchById(id, {
       [op.attribute]: op.value
@@ -127,7 +165,7 @@ export default class Processor {
 
   protected async replaceRelatedRecord(op: ReplaceRelatedRecordOperation) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -142,7 +180,7 @@ export default class Processor {
 
   protected async replaceRelatedRecords(op: ReplaceRelatedRecordsOperation) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
     const relatedIds = op.relatedRecords.map(({ id }) => id);
 
     const model = await qb.upsertGraph(
@@ -162,7 +200,7 @@ export default class Processor {
 
   protected async addToRelatedRecords(op: AddToRelatedRecordsOperation) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
     const relatedId = op.relatedRecord.id;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -175,7 +213,7 @@ export default class Processor {
     op: RemoveFromRelatedRecordsOperation
   ) {
     const { type, id } = op.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
 
     const model = (await qb.findById(id)) as BaseModel;
     const relatedId = op.relatedRecord.id;
@@ -189,7 +227,7 @@ export default class Processor {
 
   protected async findRecord(expression: FindRecord) {
     const { id, type } = expression.record;
-    const qb = this.queryBuilderForType(type);
+    const qb = this.queryForType(type);
 
     const model = (await qb.findById(id)) as BaseModel;
 
@@ -199,8 +237,8 @@ export default class Processor {
   protected async findRecords(expression: FindRecords) {
     const { type, records } = expression;
     if (type) {
-      const qb = this.queryBuilderForType(type, false);
-      const models = (await this.queryExpressionSpecifier(
+      const qb = this.queryForType(type, false);
+      const models = (await this.parseQueryExpression(
         qb,
         expression
       )) as BaseModel[];
@@ -210,10 +248,9 @@ export default class Processor {
       const recordsById: Record<string, OrbitRecord> = {};
 
       for (let type in idsByType) {
-        for (let record of await this.queryBuilderForType(
-          type,
-          false
-        ).findByIds(idsByType[type])) {
+        for (let record of await this.queryForType(type, false).findByIds(
+          idsByType[type]
+        )) {
           recordsById[record.id] = record.toOrbitRecord();
         }
       }
@@ -230,8 +267,8 @@ export default class Processor {
       record: { id, type },
       relationship
     } = expression;
-    const qb = this.queryBuilderForType(type);
-    const { model: relatedType } = this.source.schema.getRelationship(
+    const qb = this.queryForType(type);
+    const { model: relatedType } = this.schema.getRelationship(
       type,
       relationship
     );
@@ -239,7 +276,7 @@ export default class Processor {
     const parent = (await qb.findById(id)) as BaseModel;
     const query = await parent
       .$relatedQuery<BaseModel>(relationship)
-      .select(fieldsForType(this.source.schema, relatedType as string));
+      .select(this.fieldsForType(relatedType as string));
     const model = ((await query) as any) as (BaseModel | undefined);
 
     return model ? model.toOrbitRecord() : null;
@@ -250,17 +287,17 @@ export default class Processor {
       record: { id, type },
       relationship
     } = expression;
-    const { model: relatedType } = this.source.schema.getRelationship(
+    const { model: relatedType } = this.schema.getRelationship(
       type,
       relationship
     );
 
-    let qb = this.queryBuilderForType(type);
+    let qb = this.queryForType(type);
     const parent = (await qb.findById(id)) as BaseModel;
     qb = parent
       .$relatedQuery<BaseModel>(relationship)
-      .select(fieldsForType(this.source.schema, relatedType as string));
-    const models = (await this.queryExpressionSpecifier(
+      .select(this.fieldsForType(relatedType as string));
+    const models = (await this.parseQueryExpression(
       qb,
       expression
     )) as BaseModel[];
@@ -268,7 +305,26 @@ export default class Processor {
     return models.map(model => model.toOrbitRecord());
   }
 
-  expressionWithPage(
+  modelForType(type: string): ModelClass<BaseModel> {
+    return this._models[type];
+  }
+
+  queryForType(type: string, throwIfNotFound = true) {
+    const fields = this.fieldsForType(type);
+
+    const qb = this.modelForType(type)
+      .query()
+      .context({ orbitType: type })
+      .select(fields);
+
+    if (throwIfNotFound) {
+      return qb.throwIfNotFound();
+    }
+
+    return qb;
+  }
+
+  protected parseQueryExpressionPage(
     qb: QueryBuilder<BaseModel>,
     expression: FindRecords | FindRelatedRecords
   ) {
@@ -292,7 +348,7 @@ export default class Processor {
     return qb;
   }
 
-  protected queryExpressionSpecifier(
+  protected parseQueryExpressionSort(
     qb: QueryBuilder<BaseModel>,
     expression: FindRecords | FindRelatedRecords
   ) {
@@ -314,6 +370,13 @@ export default class Processor {
       }
     }
 
+    return qb;
+  }
+
+  protected parseQueryExpressionFilter(
+    qb: QueryBuilder<BaseModel>,
+    expression: FindRecords | FindRelatedRecords
+  ) {
     if (expression.filter) {
       for (let filterSpecifier of expression.filter) {
         if (filterSpecifier.kind === 'attribute') {
@@ -355,34 +418,66 @@ export default class Processor {
       }
     }
 
-    return this.expressionWithPage(qb, expression);
-  }
-
-  protected queryBuilderForType(type: string, throwIfNotFound = true) {
-    const fields = fieldsForType(this.source.schema, type);
-
-    const qb = this.source.cache
-      .queryBuilderForType(type)
-      .context({ orbitType: type })
-      .select(fields);
-
-    if (throwIfNotFound) {
-      return qb.throwIfNotFound();
-    }
-
     return qb;
   }
 
-  protected toJSON(record: OrbitRecord) {
-    return toJSON(record, this.source.schema);
+  protected parseQueryExpression(
+    qb: QueryBuilder<BaseModel>,
+    expression: FindRecords | FindRelatedRecords
+  ) {
+    qb = this.parseQueryExpressionSort(qb, expression);
+    qb = this.parseQueryExpressionFilter(qb, expression);
+    return this.parseQueryExpressionPage(qb, expression);
   }
-}
 
-function groupIdentitiesByType(identities: RecordIdentity[]) {
-  const idsByType: Record<string, string[]> = {};
-  for (let identity of identities) {
-    idsByType[identity.type] = idsByType[identity.type] || [];
-    idsByType[identity.type].push(identity.id);
+  protected parseOrbitRecord(record: OrbitRecord) {
+    const properties: Record<string, unknown> = {};
+
+    if (record.id) {
+      properties.id = record.id;
+    }
+
+    if (record.attributes) {
+      this.schema.eachAttribute(record.type, property => {
+        if (record.attributes && record.attributes[property] !== undefined) {
+          properties[property] = record.attributes[property];
+        }
+      });
+    }
+
+    if (record.relationships) {
+      this.schema.eachRelationship(record.type, (property, { type: kind }) => {
+        if (record.relationships && record.relationships[property]) {
+          if (kind === 'hasOne') {
+            const data = record.relationships[property]
+              .data as RecordIdentity | null;
+            properties[property] = data ? { id: data.id } : null;
+          } else {
+            const data = record.relationships[property]
+              .data as RecordIdentity[];
+            properties[property] = data.map(({ id }) => ({ id }));
+          }
+        }
+      });
+    }
+
+    return properties;
   }
-  return idsByType;
+
+  protected fieldsForType(type: string) {
+    const tableName = tableize(type);
+    const fields: string[] = [`${tableName}.id`];
+
+    this.schema.eachAttribute(type, property => {
+      fields.push(`${tableName}.${underscore(property)}`);
+    });
+
+    this.schema.eachRelationship(type, (property, { type: kind }) => {
+      if (kind === 'hasOne') {
+        fields.push(`${tableName}.${foreignKey(property)}`);
+      }
+    });
+
+    return fields;
+  }
 }

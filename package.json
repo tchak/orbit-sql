@@ -16,7 +16,6 @@
   "license": "MIT",
   "dependencies": {
     "@orbit/data": "^0.16.1",
-    "@orbit/record-cache": "^0.16.1",
     "inflected": "^2.0.4",
     "knex": "^0.19.3",
     "objection": "^1.6.9"

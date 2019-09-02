@@ -4,10 +4,15 @@ import {
   RelationMapping,
   snakeCaseMappers
 } from 'objection';
-import { Schema, RecordNotFoundException } from '@orbit/data';
+import {
+  Schema,
+  RecordNotFoundException,
+  RecordRelationship,
+  Record as OrbitRecord
+} from '@orbit/data';
 import { foreignKey, tableize } from 'inflected';
 
-import { tableizeJoinTable, toOrbitRecord } from './utils';
+import { tableizeJoinTable, castAttributeValue } from './utils';
 
 export class BaseModel extends Model {
   id: string;
@@ -39,14 +44,48 @@ export class BaseModel extends Model {
   }
 
   toOrbitRecord() {
-    return toOrbitRecord(this);
+    const attributes: Record<string, any> = {};
+    const relationships: Record<string, RecordRelationship> = {};
+    const { orbitType: type, orbitSchema: schema } = this;
+    const result = this.toJSON() as any;
+    const record: OrbitRecord = {
+      type,
+      id: result.id
+    };
+
+    schema.eachAttribute(type, (property, attribute) => {
+      if (result[property] != null) {
+        (attributes as Record<string, unknown>)[property] = castAttributeValue(
+          result[property],
+          attribute.type
+        );
+        record.attributes = attributes;
+      }
+    });
+
+    schema.eachRelationship(type, (property, { type: kind, model: type }) => {
+      if (kind === 'hasOne') {
+        const id = result[`${property}Id`];
+        if (id) {
+          (relationships as Record<string, unknown>)[property] = {
+            data: {
+              type: type as string,
+              id: id as string
+            }
+          };
+          record.relationships = relationships;
+        }
+      }
+    });
+
+    return record;
   }
 }
 
-export type ModelRegistry = Record<string, ModelClass<BaseModel>>;
-
-export function buildModels(schema: Schema): ModelRegistry {
-  const models: ModelRegistry = {};
+export function buildModels(
+  schema: Schema
+): Record<string, ModelClass<BaseModel>> {
+  const models: Record<string, ModelClass<BaseModel>> = {};
 
   for (let type in schema.models) {
     buildModel(schema, type, models);
@@ -58,7 +97,7 @@ export function buildModels(schema: Schema): ModelRegistry {
 export function buildModel(
   schema: Schema,
   type: string,
-  models: ModelRegistry
+  models: Record<string, ModelClass<BaseModel>>
 ): ModelClass<BaseModel> {
   if (!models[type]) {
     const tableName = tableize(type);

@@ -109,15 +109,6 @@
     "@orbit/core" "^0.16.1"
     "@orbit/utils" "^0.16.1"
 
-"@orbit/record-cache@^0.16.1":
-  version "0.16.1"
-  resolved "https://registry.yarnpkg.com/@orbit/record-cache/-/record-cache-0.16.1.tgz#476ca43e196f83070c2aee3d6ca2937d9cc2b800"
-  integrity sha512-/PyCOd/FtWmAtlkZ5JdAkdcYGT634SlfT91JkdZceeO9tYbID2O29MdNzzaiGpFC+4G57/pNN6Ow9pqYHMpvxg==
-  dependencies:
-    "@orbit/core" "^0.16.1"
-    "@orbit/data" "^0.16.1"
-    "@orbit/utils" "^0.16.1"
-
 "@orbit/utils@^0.16.1":
   version "0.16.1"
   resolved "https://registry.yarnpkg.com/@orbit/utils/-/utils-0.16.1.tgz#62a14d03768142b2f9983a830bf6216165d23f6f"
