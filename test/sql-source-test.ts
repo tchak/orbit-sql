@@ -1044,7 +1044,9 @@ QUnit.module('SQLSource', function(hooks) {
     }
   );
 
-  test('#query can perform relatedRecord filters', async function(assert) {
+  QUnit.skip('#query can perform relatedRecord filters', async function(
+    assert
+  ) {
     let jupiter = {
       type: 'planet',
       id: 'jupiter',
@@ -1343,48 +1345,51 @@ QUnit.module('SQLSource', function(hooks) {
     );
   });
 
-  test('#query can sort by an attribute, even when a particular record has none', async function(assert) {
-    let jupiter = { type: 'planet', id: 'jupiter' };
-    let earth = {
-      type: 'planet',
-      id: 'earth',
-      attributes: {
-        name: 'Earth',
-        classification: 'terrestrial',
-        atmosphere: true
-      }
-    };
-    let venus = {
-      type: 'planet',
-      id: 'venus',
-      attributes: {
-        name: 'Venus',
-        classification: 'terrestrial',
-        atmosphere: true
-      }
-    };
-    let mercury = {
-      type: 'planet',
-      id: 'mercury',
-      attributes: {
-        name: 'Mercury',
-        classification: 'terrestrial',
-        atmosphere: false
-      }
-    };
+  QUnit.skip(
+    '#query can sort by an attribute, even when a particular record has none',
+    async function(assert) {
+      let jupiter = { type: 'planet', id: 'jupiter' };
+      let earth = {
+        type: 'planet',
+        id: 'earth',
+        attributes: {
+          name: 'Earth',
+          classification: 'terrestrial',
+          atmosphere: true
+        }
+      };
+      let venus = {
+        type: 'planet',
+        id: 'venus',
+        attributes: {
+          name: 'Venus',
+          classification: 'terrestrial',
+          atmosphere: true
+        }
+      };
+      let mercury = {
+        type: 'planet',
+        id: 'mercury',
+        attributes: {
+          name: 'Mercury',
+          classification: 'terrestrial',
+          atmosphere: false
+        }
+      };
 
-    await source.update(t => [
-      t.addRecord(jupiter),
-      t.addRecord(earth),
-      t.addRecord(venus),
-      t.addRecord(mercury)
-    ]);
+      await source.update(t => [
+        t.addRecord(jupiter),
+        t.addRecord(earth),
+        t.addRecord(venus),
+        t.addRecord(mercury)
+      ]);
 
-    assert.deepEqual(
-      await source.query(q => q.findRecords('planet').sort('name')),
-      [earth, mercury, venus, jupiter]
-    );
-  });
+      assert.deepEqual(
+        await source.query(q => q.findRecords('planet').sort('name')),
+        [earth, mercury, venus, jupiter]
+      );
+    }
+  );
 
   test('#query can filter and sort by attributes', async function(assert) {
     let jupiter = {

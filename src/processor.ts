@@ -8,8 +8,20 @@ import {
   AddToRelatedRecordsOperation,
   ReplaceRelatedRecordsOperation,
   ReplaceRelatedRecordOperation,
-  RecordOperation
+  RecordOperation,
+  FindRecord,
+  FindRelatedRecords,
+  FindRecords,
+  FindRelatedRecord,
+  Query,
+  QueryExpressionParseError,
+  AttributeSortSpecifier,
+  OffsetLimitPageSpecifier,
+  RecordIdentity,
+  AttributeFilterSpecifier
 } from '@orbit/data';
+import { QueryBuilder } from 'objection';
+
 import { toJSON, fieldsForType } from './utils';
 import SQLSource from './sql-source';
 import { BaseModel } from './build-models';
@@ -29,7 +41,22 @@ export default class Processor {
     return result;
   }
 
-  processOperation(operation: RecordOperation) {
+  async query(query: Query) {
+    switch (query.expression.op) {
+      case 'findRecord':
+        return this.findRecord(query.expression as FindRecord);
+      case 'findRecords':
+        return this.findRecords(query.expression as FindRecords);
+      case 'findRelatedRecord':
+        return this.findRelatedRecord(query.expression as FindRelatedRecord);
+      case 'findRelatedRecords':
+        return this.findRelatedRecords(query.expression as FindRelatedRecords);
+      default:
+        throw new Error(`Unknown query ${query.expression.op}`);
+    }
+  }
+
+  protected processOperation(operation: RecordOperation) {
     switch (operation.op) {
       case 'addRecord':
         return this.addRecord(operation);
@@ -52,8 +79,8 @@ export default class Processor {
     }
   }
 
-  async addRecord(op: AddRecordOperation) {
-    const qb = this.queryBuilderForOperation(op);
+  protected async addRecord(op: AddRecordOperation) {
+    const qb = this.queryBuilderForType(op.record.type);
     const data = this.toJSON(op.record);
 
     const model = await qb.upsertGraph(data, {
@@ -65,8 +92,8 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async updateRecord(op: UpdateRecordOperation) {
-    const qb = this.queryBuilderForOperation(op);
+  protected async updateRecord(op: UpdateRecordOperation) {
+    const qb = this.queryBuilderForType(op.record.type);
     const data = this.toJSON(op.record);
 
     const model = await qb.upsertGraph(data, {
@@ -77,9 +104,9 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async removeRecord(op: RemoveRecordOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async removeRecord(op: RemoveRecordOperation) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
 
     const model = (await qb.findById(id)) as BaseModel;
     await qb.deleteById(id);
@@ -87,9 +114,9 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async replaceAttribute(op: ReplaceAttributeOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async replaceAttribute(op: ReplaceAttributeOperation) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
 
     const model = await qb.patchAndFetchById(id, {
       [op.attribute]: op.value
@@ -98,9 +125,9 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async replaceRelatedRecord(op: ReplaceRelatedRecordOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async replaceRelatedRecord(op: ReplaceRelatedRecordOperation) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -113,9 +140,9 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async replaceRelatedRecords(op: ReplaceRelatedRecordsOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async replaceRelatedRecords(op: ReplaceRelatedRecordsOperation) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
     const relatedIds = op.relatedRecords.map(({ id }) => id);
 
     const model = await qb.upsertGraph(
@@ -133,9 +160,9 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async addToRelatedRecords(op: AddToRelatedRecordsOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async addToRelatedRecords(op: AddToRelatedRecordsOperation) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
     const relatedId = op.relatedRecord.id;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -144,9 +171,11 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  async removeFromRelatedRecords(op: RemoveFromRelatedRecordsOperation) {
-    const { id } = op.record;
-    const qb = this.queryBuilderForOperation(op);
+  protected async removeFromRelatedRecords(
+    op: RemoveFromRelatedRecordsOperation
+  ) {
+    const { type, id } = op.record;
+    const qb = this.queryBuilderForType(type);
 
     const model = (await qb.findById(id)) as BaseModel;
     const relatedId = op.relatedRecord.id;
@@ -158,20 +187,202 @@ export default class Processor {
     return model.toOrbitRecord();
   }
 
-  protected queryBuilderForType(type: string) {
-    return this.source.cache.queryBuilderForType(type);
+  protected async findRecord(expression: FindRecord) {
+    const { id, type } = expression.record;
+    const qb = this.queryBuilderForType(type);
+
+    const model = (await qb.findById(id)) as BaseModel;
+
+    return model.toOrbitRecord();
   }
 
-  protected queryBuilderForOperation(op: RecordOperation) {
-    const fields = fieldsForType(this.source.schema, op.record.type);
+  protected async findRecords(expression: FindRecords) {
+    const { type, records } = expression;
+    if (type) {
+      const qb = this.queryBuilderForType(type, false);
+      const models = (await this.queryExpressionSpecifier(
+        qb,
+        expression
+      )) as BaseModel[];
+      return models.map(model => model.toOrbitRecord());
+    } else if (records) {
+      const idsByType = groupIdentitiesByType(records);
+      const recordsById: Record<string, OrbitRecord> = {};
 
-    return this.queryBuilderForType(op.record.type)
-      .context({ op })
-      .throwIfNotFound()
+      for (let type in idsByType) {
+        for (let record of await this.queryBuilderForType(
+          type,
+          false
+        ).findByIds(idsByType[type])) {
+          recordsById[record.id] = record.toOrbitRecord();
+        }
+      }
+      return records.map(({ id }) => recordsById[id]).filter(record => record);
+    }
+    throw new QueryExpressionParseError(
+      `FindRecords with no type or records is not recognized for SQLSource.`,
+      expression
+    );
+  }
+
+  protected async findRelatedRecord(expression: FindRelatedRecord) {
+    const {
+      record: { id, type },
+      relationship
+    } = expression;
+    const qb = this.queryBuilderForType(type);
+    const { model: relatedType } = this.source.schema.getRelationship(
+      type,
+      relationship
+    );
+
+    const parent = (await qb.findById(id)) as BaseModel;
+    const query = await parent
+      .$relatedQuery<BaseModel>(relationship)
+      .select(fieldsForType(this.source.schema, relatedType as string));
+    const model = ((await query) as any) as (BaseModel | undefined);
+
+    return model ? model.toOrbitRecord() : null;
+  }
+
+  protected async findRelatedRecords(expression: FindRelatedRecords) {
+    const {
+      record: { id, type },
+      relationship
+    } = expression;
+    const { model: relatedType } = this.source.schema.getRelationship(
+      type,
+      relationship
+    );
+
+    let qb = this.queryBuilderForType(type);
+    const parent = (await qb.findById(id)) as BaseModel;
+    qb = parent
+      .$relatedQuery<BaseModel>(relationship)
+      .select(fieldsForType(this.source.schema, relatedType as string));
+    const models = (await this.queryExpressionSpecifier(
+      qb,
+      expression
+    )) as BaseModel[];
+
+    return models.map(model => model.toOrbitRecord());
+  }
+
+  expressionWithPage(
+    qb: QueryBuilder<BaseModel>,
+    expression: FindRecords | FindRelatedRecords
+  ) {
+    if (expression.page) {
+      if (expression.page.kind === 'offsetLimit') {
+        const offsetLimitPage = expression.page as OffsetLimitPageSpecifier;
+        if (offsetLimitPage.limit) {
+          qb = qb.limit(offsetLimitPage.limit);
+        }
+        if (offsetLimitPage.offset) {
+          qb = qb.offset(offsetLimitPage.offset);
+        }
+      } else {
+        throw new QueryExpressionParseError(
+          `Page specifier ${expression.page.kind} not recognized for SQLSource.`,
+          expression.page
+        );
+      }
+    }
+
+    return qb;
+  }
+
+  protected queryExpressionSpecifier(
+    qb: QueryBuilder<BaseModel>,
+    expression: FindRecords | FindRelatedRecords
+  ) {
+    if (expression.sort) {
+      for (let sortSpecifier of expression.sort) {
+        if (sortSpecifier.kind === 'attribute') {
+          const attributeSort = sortSpecifier as AttributeSortSpecifier;
+          if (sortSpecifier.order === 'descending') {
+            qb = qb.orderBy(attributeSort.attribute, 'desc');
+          } else {
+            qb = qb.orderBy(attributeSort.attribute);
+          }
+        } else {
+          throw new QueryExpressionParseError(
+            `Sort specifier ${sortSpecifier.kind} not recognized for SQLSource.`,
+            sortSpecifier
+          );
+        }
+      }
+    }
+
+    if (expression.filter) {
+      for (let filterSpecifier of expression.filter) {
+        if (filterSpecifier.kind === 'attribute') {
+          const attributeFilter = filterSpecifier as AttributeFilterSpecifier;
+          switch (attributeFilter.op) {
+            case 'equal':
+              qb = qb.where(attributeFilter.attribute, attributeFilter.value);
+              break;
+            case 'gt':
+              qb = qb.where(
+                attributeFilter.attribute,
+                '>',
+                attributeFilter.value
+              );
+              break;
+            case 'lt':
+              qb = qb.where(
+                attributeFilter.attribute,
+                '<',
+                attributeFilter.value
+              );
+              break;
+            case 'gte':
+              qb = qb.where(
+                attributeFilter.attribute,
+                '>=',
+                attributeFilter.value
+              );
+              break;
+            case 'lte':
+              qb = qb.where(
+                attributeFilter.attribute,
+                '<=',
+                attributeFilter.value
+              );
+              break;
+          }
+        }
+      }
+    }
+
+    return this.expressionWithPage(qb, expression);
+  }
+
+  protected queryBuilderForType(type: string, throwIfNotFound = true) {
+    const fields = fieldsForType(this.source.schema, type);
+
+    const qb = this.source.cache
+      .queryBuilderForType(type)
+      .context({ orbitType: type })
       .select(fields);
+
+    if (throwIfNotFound) {
+      return qb.throwIfNotFound();
+    }
+
+    return qb;
   }
 
   protected toJSON(record: OrbitRecord) {
     return toJSON(record, this.source.schema);
   }
+}
+
+function groupIdentitiesByType(identities: RecordIdentity[]) {
+  const idsByType: Record<string, string[]> = {};
+  for (let identity of identities) {
+    idsByType[identity.type] = idsByType[identity.type] || [];
+    idsByType[identity.type].push(identity.id);
+  }
+  return idsByType;
 }

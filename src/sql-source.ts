@@ -1,5 +1,4 @@
 import Orbit, {
-  Resettable,
   Query,
   QueryOrExpression,
   queryable,
@@ -30,8 +29,7 @@ export interface SQLSourceSettings extends SourceSettings {
  */
 @queryable
 @updatable
-export default class SQLSource extends Source
-  implements Resettable, Queryable, Updatable {
+export default class SQLSource extends Source implements Queryable, Updatable {
   protected _cache: SQLCache;
   protected _processor: Processor;
 
@@ -105,14 +103,6 @@ export default class SQLSource extends Source
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  // Resettable interface implementation
-  /////////////////////////////////////////////////////////////////////////////
-
-  async reset(): Promise<void> {
-    await this._cache.reset();
-  }
-
-  /////////////////////////////////////////////////////////////////////////////
   // Updatable interface implementation
   /////////////////////////////////////////////////////////////////////////////
 
@@ -131,6 +121,6 @@ export default class SQLSource extends Source
   /////////////////////////////////////////////////////////////////////////////
 
   async _query(query: Query): Promise<any> {
-    return this._cache.query(query);
+    return this._processor.query(query);
   }
 }
