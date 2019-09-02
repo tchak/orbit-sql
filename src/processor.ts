@@ -19,10 +19,11 @@ import {
   OffsetLimitPageSpecifier,
   RecordIdentity,
   AttributeFilterSpecifier,
-  Schema
+  Schema,
+  QueryExpression
 } from '@orbit/data';
 import Knex, { Config } from 'knex';
-import { QueryBuilder, ModelClass } from 'objection';
+import { QueryBuilder, ModelClass, transaction, Transaction } from 'objection';
 import { tableize, underscore, foreignKey } from 'inflected';
 
 import { BaseModel, buildModels } from './build-models';
@@ -57,9 +58,6 @@ export class Processor {
       if (this.autoMigrate) {
         await migrateModels(db, this.schema);
       }
-      for (let type of Object.keys(this._models)) {
-        this._models[type] = this._models[type].bindKnex(db);
-      }
       this._db = db;
     }
     return this._db;
@@ -72,53 +70,64 @@ export class Processor {
   }
 
   async patch(operations: RecordOperation[]) {
-    const result: OrbitRecord[] = [];
-    for (let operation of operations) {
-      result.push(await this.processOperation(operation));
-    }
-    return result;
+    return transaction(this._db as Knex, async trx => {
+      const result: OrbitRecord[] = [];
+      for (let operation of operations) {
+        result.push(await this.processOperation(operation, trx));
+      }
+      return result;
+    });
   }
 
   async query(query: Query) {
-    switch (query.expression.op) {
-      case 'findRecord':
-        return this.findRecord(query.expression as FindRecord);
-      case 'findRecords':
-        return this.findRecords(query.expression as FindRecords);
-      case 'findRelatedRecord':
-        return this.findRelatedRecord(query.expression as FindRelatedRecord);
-      case 'findRelatedRecords':
-        return this.findRelatedRecords(query.expression as FindRelatedRecords);
-      default:
-        throw new Error(`Unknown query ${query.expression.op}`);
-    }
+    return transaction(this._db as Knex, async trx => {
+      return this.processQueryExpression(query.expression, trx);
+    });
   }
 
-  protected processOperation(operation: RecordOperation) {
+  protected processOperation(operation: RecordOperation, trx: Transaction) {
     switch (operation.op) {
       case 'addRecord':
-        return this.addRecord(operation);
+        return this.addRecord(operation, trx);
       case 'updateRecord':
-        return this.updateRecord(operation);
+        return this.updateRecord(operation, trx);
       case 'removeRecord':
-        return this.removeRecord(operation);
+        return this.removeRecord(operation, trx);
       case 'replaceAttribute':
-        return this.replaceAttribute(operation);
+        return this.replaceAttribute(operation, trx);
       case 'replaceRelatedRecord':
-        return this.replaceRelatedRecord(operation);
+        return this.replaceRelatedRecord(operation, trx);
       case 'replaceRelatedRecords':
-        return this.replaceRelatedRecords(operation);
+        return this.replaceRelatedRecords(operation, trx);
       case 'addToRelatedRecords':
-        return this.addToRelatedRecords(operation);
+        return this.addToRelatedRecords(operation, trx);
       case 'removeFromRelatedRecords':
-        return this.removeFromRelatedRecords(operation);
+        return this.removeFromRelatedRecords(operation, trx);
       default:
         throw new Error(`Unknown operation ${operation.op}`);
     }
   }
 
-  protected async addRecord(op: AddRecordOperation) {
-    const qb = this.queryForType(op.record.type);
+  protected processQueryExpression(
+    expression: QueryExpression,
+    trx: Transaction
+  ) {
+    switch (expression.op) {
+      case 'findRecord':
+        return this.findRecord(expression as FindRecord, trx);
+      case 'findRecords':
+        return this.findRecords(expression as FindRecords, trx);
+      case 'findRelatedRecord':
+        return this.findRelatedRecord(expression as FindRelatedRecord, trx);
+      case 'findRelatedRecords':
+        return this.findRelatedRecords(expression as FindRelatedRecords, trx);
+      default:
+        throw new Error(`Unknown query ${expression.op}`);
+    }
+  }
+
+  protected async addRecord(op: AddRecordOperation, trx: Transaction) {
+    const qb = this.queryForType(trx, op.record.type);
     const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
@@ -130,8 +139,8 @@ export class Processor {
     return model.toOrbitRecord();
   }
 
-  protected async updateRecord(op: UpdateRecordOperation) {
-    const qb = this.queryForType(op.record.type);
+  protected async updateRecord(op: UpdateRecordOperation, trx: Transaction) {
+    const qb = this.queryForType(trx, op.record.type);
     const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
@@ -142,9 +151,9 @@ export class Processor {
     return model.toOrbitRecord();
   }
 
-  protected async removeRecord(op: RemoveRecordOperation) {
+  protected async removeRecord(op: RemoveRecordOperation, trx: Transaction) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
 
     const model = (await qb.findById(id)) as BaseModel;
     await qb.deleteById(id);
@@ -152,9 +161,12 @@ export class Processor {
     return model.toOrbitRecord();
   }
 
-  protected async replaceAttribute(op: ReplaceAttributeOperation) {
+  protected async replaceAttribute(
+    op: ReplaceAttributeOperation,
+    trx: Transaction
+  ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
 
     const model = await qb.patchAndFetchById(id, {
       [op.attribute]: op.value
@@ -163,24 +175,30 @@ export class Processor {
     return model.toOrbitRecord();
   }
 
-  protected async replaceRelatedRecord(op: ReplaceRelatedRecordOperation) {
+  protected async replaceRelatedRecord(
+    op: ReplaceRelatedRecordOperation,
+    trx: Transaction
+  ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
 
     const model = (await qb.findById(id)) as BaseModel;
     if (relatedId) {
-      await model.$relatedQuery(op.relationship).relate(relatedId);
+      await model.$relatedQuery(op.relationship, trx).relate(relatedId);
     } else {
-      await model.$relatedQuery(op.relationship).unrelate();
+      await model.$relatedQuery(op.relationship, trx).unrelate();
     }
 
     return model.toOrbitRecord();
   }
 
-  protected async replaceRelatedRecords(op: ReplaceRelatedRecordsOperation) {
+  protected async replaceRelatedRecords(
+    op: ReplaceRelatedRecordsOperation,
+    trx: Transaction
+  ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
     const relatedIds = op.relatedRecords.map(({ id }) => id);
 
     const model = await qb.upsertGraph(
@@ -198,46 +216,50 @@ export class Processor {
     return model.toOrbitRecord();
   }
 
-  protected async addToRelatedRecords(op: AddToRelatedRecordsOperation) {
+  protected async addToRelatedRecords(
+    op: AddToRelatedRecordsOperation,
+    trx: Transaction
+  ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
     const relatedId = op.relatedRecord.id;
 
     const model = (await qb.findById(id)) as BaseModel;
-    await model.$relatedQuery(op.relationship).relate(relatedId);
+    await model.$relatedQuery(op.relationship, trx).relate(relatedId);
 
     return model.toOrbitRecord();
   }
 
   protected async removeFromRelatedRecords(
-    op: RemoveFromRelatedRecordsOperation
+    op: RemoveFromRelatedRecordsOperation,
+    trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
 
     const model = (await qb.findById(id)) as BaseModel;
     const relatedId = op.relatedRecord.id;
 
     await model
-      .$relatedQuery(op.relationship)
+      .$relatedQuery(op.relationship, trx)
       .unrelate()
       .where('id', relatedId);
     return model.toOrbitRecord();
   }
 
-  protected async findRecord(expression: FindRecord) {
+  protected async findRecord(expression: FindRecord, trx: Transaction) {
     const { id, type } = expression.record;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
 
     const model = (await qb.findById(id)) as BaseModel;
 
     return model.toOrbitRecord();
   }
 
-  protected async findRecords(expression: FindRecords) {
+  protected async findRecords(expression: FindRecords, trx: Transaction) {
     const { type, records } = expression;
     if (type) {
-      const qb = this.queryForType(type, false);
+      const qb = this.queryForType(trx, type, false);
       const models = (await this.parseQueryExpression(
         qb,
         expression
@@ -248,7 +270,7 @@ export class Processor {
       const recordsById: Record<string, OrbitRecord> = {};
 
       for (let type in idsByType) {
-        for (let record of await this.queryForType(type, false).findByIds(
+        for (let record of await this.queryForType(trx, type, false).findByIds(
           idsByType[type]
         )) {
           recordsById[record.id] = record.toOrbitRecord();
@@ -262,12 +284,15 @@ export class Processor {
     );
   }
 
-  protected async findRelatedRecord(expression: FindRelatedRecord) {
+  protected async findRelatedRecord(
+    expression: FindRelatedRecord,
+    trx: Transaction
+  ) {
     const {
       record: { id, type },
       relationship
     } = expression;
-    const qb = this.queryForType(type);
+    const qb = this.queryForType(trx, type);
     const { model: relatedType } = this.schema.getRelationship(
       type,
       relationship
@@ -275,14 +300,17 @@ export class Processor {
 
     const parent = (await qb.findById(id)) as BaseModel;
     const query = await parent
-      .$relatedQuery<BaseModel>(relationship)
+      .$relatedQuery<BaseModel>(relationship, trx)
       .select(this.fieldsForType(relatedType as string));
     const model = ((await query) as any) as (BaseModel | undefined);
 
     return model ? model.toOrbitRecord() : null;
   }
 
-  protected async findRelatedRecords(expression: FindRelatedRecords) {
+  protected async findRelatedRecords(
+    expression: FindRelatedRecords,
+    trx: Transaction
+  ) {
     const {
       record: { id, type },
       relationship
@@ -292,10 +320,10 @@ export class Processor {
       relationship
     );
 
-    let qb = this.queryForType(type);
+    let qb = this.queryForType(trx, type);
     const parent = (await qb.findById(id)) as BaseModel;
     qb = parent
-      .$relatedQuery<BaseModel>(relationship)
+      .$relatedQuery<BaseModel>(relationship, trx)
       .select(this.fieldsForType(relatedType as string));
     const models = (await this.parseQueryExpression(
       qb,
@@ -309,11 +337,11 @@ export class Processor {
     return this._models[type];
   }
 
-  queryForType(type: string, throwIfNotFound = true) {
+  queryForType(trx: Transaction, type: string, throwIfNotFound = true) {
     const fields = this.fieldsForType(type);
 
     const qb = this.modelForType(type)
-      .query()
+      .query(trx)
       .context({ orbitType: type })
       .select(fields);
 
