@@ -141,7 +141,10 @@ export default class SQLCache extends AsyncRecordCache {
           }
         }
         for (let identity of identities) {
-          records.push(recordsById[identity.id]);
+          let record = recordsById[identity.id];
+          if (record) {
+            records.push(record);
+          }
         }
       }
     }

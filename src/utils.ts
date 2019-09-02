@@ -1,4 +1,4 @@
-import { Record as OrbitRecord, Schema } from '@orbit/data';
+import { Record as OrbitRecord, Schema, RecordRelationship } from '@orbit/data';
 import { tableize, underscore, foreignKey } from 'inflected';
 import { BaseModel } from './build-models';
 
@@ -9,29 +9,35 @@ export function tableizeJoinTable(table1: string, table2: string) {
 export function toOrbitRecord(model: BaseModel): OrbitRecord {
   const record: OrbitRecord = {
     type: model.orbitType,
-    id: model.id,
-    attributes: {},
-    relationships: {}
+    id: model.id
   };
+  const attributes: Record<string, any> = {};
+  const relationships: Record<string, RecordRelationship> = {};
   const { orbitType: type, orbitSchema: schema } = model;
 
   const result = model.toJSON() as any;
   schema.eachAttribute(type, (property, attribute) => {
     if (result[property] != null) {
-      (record.attributes as Record<string, unknown>)[
-        property
-      ] = castAttributeValue(result[property], attribute.type);
+      (attributes as Record<string, unknown>)[property] = castAttributeValue(
+        result[property],
+        attribute.type
+      );
+      record.attributes = attributes;
     }
   });
 
   schema.eachRelationship(type, (property, { type: kind, model: type }) => {
     if (kind === 'hasOne') {
-      (record.relationships as Record<string, unknown>)[property] = {
-        data: {
-          type: type as string,
-          id: result[`${property}Id`] as string
-        }
-      };
+      const id = result[`${property}Id`];
+      if (id) {
+        (relationships as Record<string, unknown>)[property] = {
+          data: {
+            type: type as string,
+            id: id as string
+          }
+        };
+        record.relationships = relationships;
+      }
     }
   });
 
