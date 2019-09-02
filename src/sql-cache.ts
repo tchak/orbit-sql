@@ -152,7 +152,7 @@ export default class SQLCache extends AsyncRecordCache {
   }
 
   async setRecordAsync(record: OrbitRecord): Promise<void> {
-    const properties = this.toProperties(record);
+    const properties = {};
 
     await this.queryBuilderForType(record.type).upsertGraph(properties, {
       insertMissing: true,
@@ -259,40 +259,8 @@ export default class SQLCache extends AsyncRecordCache {
     }
   }
 
-  protected queryBuilderForType(type: string) {
+  queryBuilderForType(type: string) {
     return this._models[type].query();
-  }
-
-  protected toProperties(record: OrbitRecord) {
-    const properties: Record<string, unknown> = {
-      id: record.id
-    };
-
-    if (record.attributes) {
-      this.schema.eachAttribute(record.type, property => {
-        if (record.attributes && record.attributes[property] !== undefined) {
-          properties[property] = record.attributes[property];
-        }
-      });
-    }
-
-    if (record.relationships) {
-      this.schema.eachRelationship(record.type, (property, { type: kind }) => {
-        if (record.relationships && record.relationships[property]) {
-          if (kind === 'hasOne') {
-            const data = record.relationships[property]
-              .data as RecordIdentity | null;
-            properties[property] = data ? { id: data.id } : null;
-          } else {
-            const data = record.relationships[property]
-              .data as RecordIdentity[];
-            properties[property] = data.map(({ id }) => ({ id }));
-          }
-        }
-      });
-    }
-
-    return properties;
   }
 }
 

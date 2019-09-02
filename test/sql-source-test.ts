@@ -94,230 +94,250 @@ QUnit.module('SQLSource', function(hooks) {
     );
   });
 
-  QUnit.skip('#upgrade upgrades the cache to include new models introduced in a schema', async function(assert) {
-    let person = {
-      type: 'person',
-      id: '1',
-      relationships: { planet: { data: { type: 'planet', id: 'earth' } } }
-    };
+  QUnit.skip(
+    '#upgrade upgrades the cache to include new models introduced in a schema',
+    async function(assert) {
+      let person = {
+        type: 'person',
+        id: '1',
+        relationships: { planet: { data: { type: 'planet', id: 'earth' } } }
+      };
 
-    assert.throws(async () => await source.update(t => t.addRecord(person)));
+      assert.throws(async () => await source.update(t => t.addRecord(person)));
 
-    let models = clone(schema.models);
-    models.planet.relationships.inhabitants = {
-      type: 'hasMany',
-      model: 'person',
-      inverse: 'planet'
-    };
-    models.person = {
-      relationships: {
-        planet: { type: 'hasOne', model: 'planet', inverse: 'inhabitants' }
-      }
-    };
+      let models = clone(schema.models);
+      models.planet.relationships.inhabitants = {
+        type: 'hasMany',
+        model: 'person',
+        inverse: 'planet'
+      };
+      models.person = {
+        relationships: {
+          planet: { type: 'hasOne', model: 'planet', inverse: 'inhabitants' }
+        }
+      };
 
-    schema.upgrade({ models });
-    source.upgrade();
-    await source.update(t => t.addRecord(person));
-    assert.deepEqual(
-      await source.query(q => q.findRecord({ type: 'person', id: '1' })),
-      person,
-      'records match'
-    );
-    assert.deepEqual(
-      await source.query(q => q.findRelatedRecord(person, 'planet')),
-      { type: 'planet', id: 'earth' },
-      'relationship exists'
-    );
-  });
+      schema.upgrade({ models });
+      source.upgrade();
+      await source.update(t => t.addRecord(person));
+      assert.deepEqual(
+        await source.query(q => q.findRecord({ type: 'person', id: '1' })),
+        person,
+        'records match'
+      );
+      assert.deepEqual(
+        await source.query(q => q.findRelatedRecord(person, 'planet')),
+        { type: 'planet', id: 'earth' },
+        'relationship exists'
+      );
+    }
+  );
 
-  test('#update updates the cache and returns arrays of primary data and inverse ops', async function(assert) {
+  test('#update can not remove inexistant planet', async function(assert) {
+    assert.expect(1);
+
     let p1 = { type: 'planet', id: '1', attributes: { name: 'Earth' } };
     let p2 = { type: 'planet', id: '2' };
 
-    let result = await source.update(t => [
-      t.addRecord(p1),
-      t.removeRecord(p2)
-    ]);
-
-    assert.deepEqual(
-      result,
-      [
-        p1,
-        null // null because p2 didn't exist
-      ],
-      'ignores ops that are noops'
-    );
+    try {
+      await source.update(t => [t.addRecord(p1), t.removeRecord(p2)]);
+    } catch (e) {
+      assert.throws(() => {
+        throw e;
+      }, RecordNotFoundException);
+    }
   });
 
-  QUnit.skip('#update tracks refs and clears them from hasOne relationships when a referenced record is removed', async function(assert) {
-    const jupiter: Record = {
-      type: 'planet',
-      id: 'p1',
-      attributes: { name: 'Jupiter' },
-      relationships: { moons: { data: undefined } }
-    };
-    const io = {
-      type: 'moon',
-      id: 'm1',
-      attributes: { name: 'Io' },
-      relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
-    };
-    const europa: Record = {
-      type: 'moon',
-      id: 'm2',
-      attributes: { name: 'Europa' },
-      relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
-    };
+  QUnit.skip(
+    '#update tracks refs and clears them from hasOne relationships when a referenced record is removed',
+    async function(assert) {
+      const jupiter: Record = {
+        type: 'planet',
+        id: 'p1',
+        attributes: { name: 'Jupiter' },
+        relationships: { moons: { data: undefined } }
+      };
+      const io = {
+        type: 'moon',
+        id: 'm1',
+        attributes: { name: 'Io' },
+        relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
+      };
+      const europa: Record = {
+        type: 'moon',
+        id: 'm2',
+        attributes: { name: 'Europa' },
+        relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
+      };
 
-    await source.update(t => [
-      t.addRecord(jupiter),
-      t.addRecord(io),
-      t.addRecord(europa)
-    ]);
+      await source.update(t => [
+        t.addRecord(jupiter),
+        t.addRecord(io),
+        t.addRecord(europa)
+      ]);
 
-    assert.deepEqual(
-      (await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })))
-        .relationships.planet.data,
-      { type: 'planet', id: 'p1' },
-      'Jupiter has been assigned to Io'
-    );
-    assert.deepEqual(
-      (await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })))
-        .relationships.planet.data,
-      { type: 'planet', id: 'p1' },
-      'Jupiter has been assigned to Europa'
-    );
+      assert.deepEqual(
+        (await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })))
+          .relationships.planet.data,
+        { type: 'planet', id: 'p1' },
+        'Jupiter has been assigned to Io'
+      );
+      assert.deepEqual(
+        (await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })))
+          .relationships.planet.data,
+        { type: 'planet', id: 'p1' },
+        'Jupiter has been assigned to Europa'
+      );
 
-    await source.update(t => t.removeRecord(jupiter));
+      await source.update(t => t.removeRecord(jupiter));
 
-    assert.equal(
-      await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })),
-      undefined,
-      'Jupiter is GONE'
-    );
+      assert.equal(
+        await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })),
+        undefined,
+        'Jupiter is GONE'
+      );
 
-    assert.equal(
-      (await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })))
-        .relationships.planet.data,
-      undefined,
-      'Jupiter has been cleared from Io'
-    );
-    assert.equal(
-      (await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })))
-        .relationships.planet.data,
-      undefined,
-      'Jupiter has been cleared from Europa'
-    );
-  });
+      assert.equal(
+        (await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })))
+          .relationships.planet.data,
+        undefined,
+        'Jupiter has been cleared from Io'
+      );
+      assert.equal(
+        (await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })))
+          .relationships.planet.data,
+        undefined,
+        'Jupiter has been cleared from Europa'
+      );
+    }
+  );
 
-  QUnit.skip('#update tracks refs and clears them from hasMany relationships when a referenced record is removed', async function(assert) {
-    const io: Record = {
-      type: 'moon',
-      id: 'm1',
-      attributes: { name: 'Io' },
-      relationships: { planet: { data: null } }
-    };
-    const europa: Record = {
-      type: 'moon',
-      id: 'm2',
-      attributes: { name: 'Europa' },
-      relationships: { planet: { data: null } }
-    };
-    const jupiter: Record = {
-      type: 'planet',
-      id: 'p1',
-      attributes: { name: 'Jupiter' },
-      relationships: {
-        moons: {
-          data: [{ type: 'moon', id: 'm1' }, { type: 'moon', id: 'm2' }]
+  QUnit.skip(
+    '#update tracks refs and clears them from hasMany relationships when a referenced record is removed',
+    async function(assert) {
+      const io: Record = {
+        type: 'moon',
+        id: 'm1',
+        attributes: { name: 'Io' },
+        relationships: { planet: { data: null } }
+      };
+      const europa: Record = {
+        type: 'moon',
+        id: 'm2',
+        attributes: { name: 'Europa' },
+        relationships: { planet: { data: null } }
+      };
+      const jupiter: Record = {
+        type: 'planet',
+        id: 'p1',
+        attributes: { name: 'Jupiter' },
+        relationships: {
+          moons: {
+            data: [{ type: 'moon', id: 'm1' }, { type: 'moon', id: 'm2' }]
+          }
         }
-      }
-    };
+      };
 
+      await source.update(t => [
+        t.addRecord(io),
+        t.addRecord(europa),
+        t.addRecord(jupiter)
+      ]);
+
+      // assert.deepEqual(
+      //   (await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })))
+      //     .relationships.moons.data,
+      //   [{ type: 'moon', id: 'm1' }, { type: 'moon', id: 'm2' }],
+      //   'Jupiter has been assigned to Io and Europa'
+      // );
+      assert.ok(
+        recordsIncludeAll(
+          await source.query(q => q.findRelatedRecords(jupiter, 'moons')),
+          [io, europa]
+        ),
+        'Jupiter has been assigned to Io and Europa'
+      );
+
+      await source.update(t => t.removeRecord(io));
+
+      assert.equal(
+        await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })),
+        null,
+        'Io is GONE'
+      );
+
+      await source.update(t => t.removeRecord(europa));
+
+      assert.equal(
+        await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })),
+        null,
+        'Europa is GONE'
+      );
+
+      assert.deepEqual(
+        await source.query(q =>
+          q.findRelatedRecords({ type: 'planet', id: 'p1' }, 'moons')
+        ),
+        [],
+        'Europa and Io have been cleared from Jupiter'
+      );
+    }
+  );
+
+  test('#update adds link to hasMany', async function(assert) {
     await source.update(t => [
-      t.addRecord(io),
-      t.addRecord(europa),
-      t.addRecord(jupiter)
-    ]);
-
-    // assert.deepEqual(
-    //   (await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })))
-    //     .relationships.moons.data,
-    //   [{ type: 'moon', id: 'm1' }, { type: 'moon', id: 'm2' }],
-    //   'Jupiter has been assigned to Io and Europa'
-    // );
-    assert.ok(
-      recordsIncludeAll(
-        await source.query(q => q.findRelatedRecords(jupiter, 'moons')),
-        [io, europa]
-      ),
-      'Jupiter has been assigned to Io and Europa'
-    );
-
-    await source.update(t => t.removeRecord(io));
-
-    assert.equal(
-      await source.query(q => q.findRecord({ type: 'moon', id: 'm1' })),
-      null,
-      'Io is GONE'
-    );
-
-    await source.update(t => t.removeRecord(europa));
-
-    assert.equal(
-      await source.query(q => q.findRecord({ type: 'moon', id: 'm2' })),
-      null,
-      'Europa is GONE'
-    );
-
-    assert.deepEqual(
-      await source.query(q =>
-        q.findRelatedRecords({ type: 'planet', id: 'p1' }, 'moons')
-      ),
-      [],
-      'Europa and Io have been cleared from Jupiter'
-    );
-  });
-
-  test("#update adds link to hasMany if record doesn't exist", async function(assert) {
-    await source.update(t =>
+      t.addRecord({ type: 'planet', id: 'p1' }),
+      t.addRecord({ type: 'moon', id: 'm1' }),
+      // ]);
+      // await source.update(t => [
       t.addToRelatedRecords({ type: 'planet', id: 'p1' }, 'moons', {
         type: 'moon',
         id: 'm1'
       })
-    );
+    ]);
 
     assert.deepEqual(
       await source.query(q =>
         q.findRelatedRecords({ type: 'planet', id: 'p1' }, 'moons')
       ),
-      [{ type: 'moon', id: 'm1', relationships: { planet: { data: { type: 'planet', id: 'p1'}}} }],
+      [
+        {
+          type: 'moon',
+          id: 'm1',
+          relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
+        }
+      ],
       'relationship was added'
     );
   });
 
-  QUnit.skip("#update does not remove hasMany relationship if record doesn't exist", async function(assert) {
-    assert.expect(1);
+  QUnit.skip(
+    "#update does not remove hasMany relationship if record doesn't exist",
+    async function(assert) {
+      assert.expect(1);
 
-    source.on('transform', () => {
-      assert.ok(false, 'no operations were applied');
-    });
+      source.on('transform', () => {
+        assert.ok(false, 'no operations were applied');
+      });
 
-    await source.update(t =>
-      t.removeFromRelatedRecords({ type: 'planet', id: 'p1' }, 'moons', {
-        type: 'moon',
-        id: 'moon1'
-      })
-    );
+      await source.update(t =>
+        t.removeFromRelatedRecords({ type: 'planet', id: 'p1' }, 'moons', {
+          type: 'moon',
+          id: 'moon1'
+        })
+      );
 
-    assert.equal(
-      await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })),
-      undefined,
-      'planet does not exist'
-    );
-  });
+      assert.equal(
+        await source.query(q => q.findRecord({ type: 'planet', id: 'p1' })),
+        undefined,
+        'planet does not exist'
+      );
+    }
+  );
 
-  QUnit.skip("#update adds hasOne if record doesn't exist", async function(assert) {
+  QUnit.skip("#update adds hasOne if record doesn't exist", async function(
+    assert
+  ) {
     assert.expect(2);
 
     const tb = source.transformBuilder;
@@ -337,9 +357,17 @@ QUnit.module('SQLSource', function(hooks) {
     source.on('transform', ({ operations }) => {
       order++;
       if (order === 1) {
-        assert.deepEqual(operations[0], replacePlanet, 'applied replacePlanet operation');
+        assert.deepEqual(
+          operations[0],
+          replacePlanet,
+          'applied replacePlanet operation'
+        );
       } else if (order === 2) {
-        assert.deepEqual(operations[0], addToMoons, 'applied addToMoons operation');
+        assert.deepEqual(
+          operations[0],
+          addToMoons,
+          'applied addToMoons operation'
+        );
       } else {
         assert.ok(false, 'too many ops');
       }
@@ -348,75 +376,56 @@ QUnit.module('SQLSource', function(hooks) {
     await source.update([replacePlanet]);
   });
 
-  test("#update will add empty hasOne link if record doesn't exist", async function(assert) {
-    assert.expect(2);
+  QUnit.skip(
+    '#update does not add link to hasMany if link already exists',
+    async function(assert) {
+      assert.expect(1);
 
-    const tb = source.transformBuilder;
-    const clearPlanet = tb.replaceRelatedRecord(
-      { type: 'moon', id: 'moon1' },
-      'planet',
-      null
-    );
+      const jupiter: Record = {
+        id: 'p1',
+        type: 'planet',
+        attributes: { name: 'Jupiter' },
+        relationships: { moons: { data: [{ type: 'moon', id: 'm1' }] } }
+      };
 
-    let order = 0;
-    source.on('transform', ({ operations }) => {
-      order++;
-      if (order === 1) {
-        assert.deepEqual(operations[0], clearPlanet, 'applied clearPlanet operation');
-      } else {
-        assert.ok(false, 'too many ops');
-      }
-    });
+      await source.update(t => t.addRecord(jupiter));
 
-    await source.update([clearPlanet]);
+      source.on('transform', () => {
+        assert.ok(false, 'no operations were applied');
+      });
 
-    assert.ok(true, 'update completed');
-  });
+      await source.update(t =>
+        t.addToRelatedRecords(jupiter, 'moons', { type: 'moon', id: 'm1' })
+      );
 
-  QUnit.skip('#update does not add link to hasMany if link already exists', async function(assert) {
-    assert.expect(1);
+      assert.ok(true, 'patch completed');
+    }
+  );
 
-    const jupiter: Record = {
-      id: 'p1',
-      type: 'planet',
-      attributes: { name: 'Jupiter' },
-      relationships: { moons: { data: [{ type: 'moon', id: 'm1' }] } }
-    };
+  QUnit.skip(
+    "#update does not remove relationship from hasMany if relationship doesn't exist",
+    async function(assert) {
+      assert.expect(1);
 
-    await source.update(t => t.addRecord(jupiter));
+      const jupiter: Record = {
+        id: 'p1',
+        type: 'planet',
+        attributes: { name: 'Jupiter' }
+      };
 
-    source.on('transform', () => {
-      assert.ok(false, 'no operations were applied');
-    });
+      await source.update(t => t.addRecord(jupiter));
 
-    await source.update(t =>
-      t.addToRelatedRecords(jupiter, 'moons', { type: 'moon', id: 'm1' })
-    );
+      source.on('transform', () => {
+        assert.ok(false, 'no operations were applied');
+      });
 
-    assert.ok(true, 'patch completed');
-  });
+      await source.update(t =>
+        t.removeFromRelatedRecords(jupiter, 'moons', { type: 'moon', id: 'm1' })
+      );
 
-  QUnit.skip("#update does not remove relationship from hasMany if relationship doesn't exist", async function(assert) {
-    assert.expect(1);
-
-    const jupiter: Record = {
-      id: 'p1',
-      type: 'planet',
-      attributes: { name: 'Jupiter' }
-    };
-
-    await source.update(t => t.addRecord(jupiter));
-
-    source.on('transform', () => {
-      assert.ok(false, 'no operations were applied');
-    });
-
-    await source.update(t =>
-      t.removeFromRelatedRecords(jupiter, 'moons', { type: 'moon', id: 'm1' })
-    );
-
-    assert.ok(true, 'patch completed');
-  });
+      assert.ok(true, 'patch completed');
+    }
+  );
 
   test('#update can add and remove to has-many relationship', async function(assert) {
     assert.expect(2);
@@ -490,114 +499,127 @@ QUnit.module('SQLSource', function(hooks) {
     );
   });
 
-  QUnit.skip('does not replace hasOne if relationship already exists', async function(assert) {
-    assert.expect(1);
+  QUnit.skip(
+    'does not replace hasOne if relationship already exists',
+    async function(assert) {
+      assert.expect(1);
 
-    const europa: Record = {
-      id: 'm1',
-      type: 'moon',
-      attributes: { name: 'Europa' },
-      relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
-    };
+      const europa: Record = {
+        id: 'm1',
+        type: 'moon',
+        attributes: { name: 'Europa' },
+        relationships: { planet: { data: { type: 'planet', id: 'p1' } } }
+      };
 
-    await source.update(t => t.addRecord(europa));
+      await source.update(t => t.addRecord(europa));
 
-    source.on('patch', () => {
-      assert.ok(false, 'no operations were applied');
-    });
+      source.on('patch', () => {
+        assert.ok(false, 'no operations were applied');
+      });
 
-    await source.update(t =>
-      t.replaceRelatedRecord(europa, 'planet', { type: 'planet', id: 'p1' })
-    );
+      await source.update(t =>
+        t.replaceRelatedRecord(europa, 'planet', { type: 'planet', id: 'p1' })
+      );
 
-    assert.ok(true, 'patch completed');
-  });
+      assert.ok(true, 'patch completed');
+    }
+  );
 
-  QUnit.skip("does not remove hasOne if relationship doesn't exist", async function(assert) {
-    assert.expect(1);
+  QUnit.skip(
+    "does not remove hasOne if relationship doesn't exist",
+    async function(assert) {
+      assert.expect(1);
 
-    const europa: Record = {
-      type: 'moon',
-      id: 'm1',
-      attributes: { name: 'Europa' }
-    };
+      const europa: Record = {
+        type: 'moon',
+        id: 'm1',
+        attributes: { name: 'Europa' }
+      };
 
-    await source.update(t => t.addRecord(europa));
+      await source.update(t => t.addRecord(europa));
 
-    source.on('transform', () => {
-      assert.ok(false, 'no operations were applied');
-    });
+      source.on('transform', () => {
+        assert.ok(false, 'no operations were applied');
+      });
 
-    await source.update(t => t.replaceRelatedRecord(europa, 'planet', null));
+      await source.update(t => t.replaceRelatedRecord(europa, 'planet', null));
 
-    assert.ok(true, 'patch completed');
-  });
+      assert.ok(true, 'patch completed');
+    }
+  );
 
-  QUnit.skip('#update removing model with a bi-directional hasOne', async function(assert) {
-    assert.expect(5);
+  QUnit.skip(
+    '#update removing model with a bi-directional hasOne',
+    async function(assert) {
+      assert.expect(5);
 
-    const hasOneSchema = new Schema({
-      models: {
-        one: {
-          relationships: {
-            two: { type: 'hasOne', model: 'two', inverse: 'one' }
+      const hasOneSchema = new Schema({
+        models: {
+          one: {
+            relationships: {
+              two: { type: 'hasOne', model: 'two', inverse: 'one' }
+            }
+          },
+          two: {
+            relationships: {
+              one: { type: 'hasOne', model: 'one', inverse: 'two' }
+            }
           }
-        },
-        two: {
+        }
+      });
+
+      await source.deactivate();
+      source = new SQLSource({
+        schema: hasOneSchema
+      });
+      await source.activate();
+
+      await source.update(t => [
+        t.addRecord({
+          id: '1',
+          type: 'one',
           relationships: {
-            one: { type: 'hasOne', model: 'one', inverse: 'two' }
+            two: { data: null }
           }
-        }
-      }
-    });
+        }),
+        t.addRecord({
+          id: '2',
+          type: 'two',
+          relationships: {
+            one: { data: { type: 'one', id: '1' } }
+          }
+        })
+      ]);
 
-    await source.deactivate();
-    source = new SQLSource({
-      schema: hasOneSchema
-    });
-    await source.activate();
+      const one = await source.query(q =>
+        q.findRecord({ type: 'one', id: '1' })
+      );
+      const two = await source.query(q =>
+        q.findRecord({ type: 'two', id: '2' })
+      );
+      assert.ok(one, 'one exists');
+      assert.ok(two, 'two exists');
+      assert.deepEqual(
+        one.relationships.two.data,
+        { type: 'two', id: '2' },
+        'one links to two'
+      );
+      assert.deepEqual(
+        two.relationships.one.data,
+        { type: 'one', id: '1' },
+        'two links to one'
+      );
 
-    await source.update(t => [
-      t.addRecord({
-        id: '1',
-        type: 'one',
-        relationships: {
-          two: { data: null }
-        }
-      }),
-      t.addRecord({
-        id: '2',
-        type: 'two',
-        relationships: {
-          one: { data: { type: 'one', id: '1' } }
-        }
-      })
-    ]);
+      source.update(t => t.removeRecord(two));
 
-    const one = await source.query(q => q.findRecord({ type: 'one', id: '1' }));
-    const two = await source.query(q => q.findRecord({ type: 'two', id: '2' }));
-    assert.ok(one, 'one exists');
-    assert.ok(two, 'two exists');
-    assert.deepEqual(
-      one.relationships.two.data,
-      { type: 'two', id: '2' },
-      'one links to two'
-    );
-    assert.deepEqual(
-      two.relationships.one.data,
-      { type: 'one', id: '1' },
-      'two links to one'
-    );
-
-    source.update(t => t.removeRecord(two));
-
-    assert.equal(
-      (await source.query(q => q.findRecord({ type: 'one', id: '1' })))
-        .relationships.two.data,
-      null,
-      'ones link to two got removed'
-    );
-  });
+      assert.equal(
+        (await source.query(q => q.findRecord({ type: 'one', id: '1' })))
+          .relationships.two.data,
+        null,
+        'ones link to two got removed'
+      );
+    }
+  );
 
   test('#update merges records when "replacing" and will not stomp on attributes and relationships that are not replaced', async function(assert) {
     await source.update(t => [
@@ -627,36 +649,44 @@ QUnit.module('SQLSource', function(hooks) {
     );
   });
 
-  QUnit.skip('#update can replace related records but only if they are different', async function(assert) {
-    await source.update(t => [
-      t.addRecord({
-        type: 'planet',
-        id: '1',
-        attributes: { name: 'Earth' },
-        relationships: { moons: { data: [{ type: 'moon', id: 'm1' }] } }
-      })
-    ]);
+  QUnit.skip(
+    '#update can replace related records but only if they are different',
+    async function(assert) {
+      await source.update(t => [
+        t.addRecord({
+          type: 'planet',
+          id: '1',
+          attributes: { name: 'Earth' },
+          relationships: { moons: { data: [{ type: 'moon', id: 'm1' }] } }
+        })
+      ]);
 
-    let result = await source.update(t => [
-      t.replaceRelatedRecords({ type: 'planet', id: '1' }, 'moons', [
-        { type: 'moon', id: 'm1' }
-      ])
-    ]);
+      let result = await source.update(t => [
+        t.replaceRelatedRecords({ type: 'planet', id: '1' }, 'moons', [
+          { type: 'moon', id: 'm1' }
+        ])
+      ]);
 
-    assert.deepEqual(
-      result,
-      [],
-      'nothing has changed so there are no inverse ops'
-    );
+      assert.deepEqual(
+        result,
+        [],
+        'nothing has changed so there are no inverse ops'
+      );
 
-    result = await source.update(t => [
-      t.replaceRelatedRecords({ type: 'planet', id: '1' }, 'moons', [
-        { type: 'moon', id: 'm2' }
-      ])
-    ]);
-  });
+      result = await source.update(t => [
+        t.replaceRelatedRecords({ type: 'planet', id: '1' }, 'moons', [
+          { type: 'moon', id: 'm2' }
+        ])
+      ]);
+    }
+  );
 
   test('#update merges records when "replacing" and _will_ replace specified attributes and relationships', async function(assert) {
+    await source.update(t => [
+      t.addRecord({ type: 'moon', id: 'm1' }),
+      t.addRecord({ type: 'moon', id: 'm2' })
+    ]);
+
     let earth = {
       type: 'planet',
       id: '1',
@@ -673,10 +703,12 @@ QUnit.module('SQLSource', function(hooks) {
 
     let result = await source.update(t => t.addRecord(earth));
 
+    delete earth.relationships;
     assert.deepEqual(result, earth);
 
     result = await source.update(t => t.updateRecord(jupiter));
 
+    delete jupiter.relationships;
     assert.deepEqual(result, jupiter);
 
     assert.deepEqual(
@@ -1532,18 +1564,15 @@ QUnit.module('SQLSource', function(hooks) {
     );
   });
 
-  QUnit.skip(
-    "#query - findRecord - throws RecordNotFoundException if record doesn't exist",
-    async function(assert) {
-      assert.throws(
-        async () =>
-          await source.query(q =>
-            q.findRecord({ type: 'planet', id: 'jupiter' })
-          ),
-        RecordNotFoundException
-      );
+  test("#query - findRecord - throws RecordNotFoundException if record doesn't exist", async function(assert) {
+    try {
+      await source.query(q => q.findRecord({ type: 'planet', id: 'jupiter' }));
+    } catch (e) {
+      assert.throws(() => {
+        throw e;
+      }, RecordNotFoundException);
     }
-  );
+  });
 
   test('#query - findRecords - records by type', async function(assert) {
     const jupiter: Record = {

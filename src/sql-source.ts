@@ -16,6 +16,7 @@ import Orbit, {
 import Knex from 'knex';
 
 import SQLCache, { SQLCacheSettings } from './sql-cache';
+import Processor from './processor';
 
 const { assert } = Orbit;
 
@@ -32,6 +33,7 @@ export interface SQLSourceSettings extends SourceSettings {
 export default class SQLSource extends Source
   implements Resettable, Queryable, Updatable {
   protected _cache: SQLCache;
+  protected _processor: Processor;
 
   // Queryable interface stubs
   query: (
@@ -77,6 +79,7 @@ export default class SQLSource extends Source
     cacheSettings.knex = cacheSettings.knex || settings.knex;
 
     this._cache = new SQLCache(cacheSettings);
+    this._processor = new Processor(this);
 
     if (autoActivate !== false) {
       this.activate();
@@ -115,11 +118,10 @@ export default class SQLSource extends Source
 
   async _update(transform: Transform): Promise<any> {
     if (!this.transformLog.contains(transform.id)) {
-      const result = await this.cache.patch(
+      const results = await this._processor.patch(
         transform.operations as RecordOperation[]
       );
       await this.transformed([transform]);
-      const results = result.data;
       return transform.operations.length === 1 ? results[0] : results;
     }
   }

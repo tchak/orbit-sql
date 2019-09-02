@@ -1,4 +1,9 @@
-import { Record as OrbitRecord, Schema, RecordRelationship } from '@orbit/data';
+import {
+  Record as OrbitRecord,
+  Schema,
+  RecordRelationship,
+  RecordIdentity
+} from '@orbit/data';
 import { tableize, underscore, foreignKey } from 'inflected';
 import { BaseModel } from './build-models';
 
@@ -71,4 +76,35 @@ export function fieldsForType(schema: Schema, type: string) {
   });
 
   return fields;
+}
+
+export function toJSON(record: OrbitRecord, schema: Schema) {
+  const properties: Record<string, unknown> = {
+    id: record.id
+  };
+
+  if (record.attributes) {
+    schema.eachAttribute(record.type, property => {
+      if (record.attributes && record.attributes[property] !== undefined) {
+        properties[property] = record.attributes[property];
+      }
+    });
+  }
+
+  if (record.relationships) {
+    schema.eachRelationship(record.type, (property, { type: kind }) => {
+      if (record.relationships && record.relationships[property]) {
+        if (kind === 'hasOne') {
+          const data = record.relationships[property]
+            .data as RecordIdentity | null;
+          properties[property] = data ? { id: data.id } : null;
+        } else {
+          const data = record.relationships[property].data as RecordIdentity[];
+          properties[property] = data.map(({ id }) => ({ id }));
+        }
+      }
+    });
+  }
+
+  return properties;
 }

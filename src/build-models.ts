@@ -4,7 +4,7 @@ import {
   RelationMapping,
   snakeCaseMappers
 } from 'objection';
-import { Schema } from '@orbit/data';
+import { Schema, RecordNotFoundException } from '@orbit/data';
 import { foreignKey, tableize } from 'inflected';
 
 import { tableizeJoinTable, toOrbitRecord } from './utils';
@@ -30,6 +30,12 @@ export class BaseModel extends Model {
 
   static get columnNameMappers() {
     return snakeCaseMappers();
+  }
+
+  static createNotFoundError(): Error {
+    // const { type, id } = ({} as any).op.record;
+    const error = new RecordNotFoundException('any', 'any');
+    return error as any;
   }
 
   toOrbitRecord() {
