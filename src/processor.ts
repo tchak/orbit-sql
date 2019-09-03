@@ -308,19 +308,13 @@ export class Processor {
       record: { id, type },
       relationship
     } = expression;
-    const qb = this.queryForType(trx, type).mergeContext({
+
+    let qb = this.queryForType(trx, type).mergeContext({
       recordId: id
     });
-    const { model: relatedType } = this.schema.getRelationship(
-      type,
-      relationship
-    );
-
     const parent = (await qb.findById(id)) as BaseModel;
-    const query = await parent
-      .$relatedQuery<BaseModel>(relationship, trx)
-      .select(this.fieldsForType(relatedType as string));
-    const model = ((await query) as any) as (BaseModel | undefined);
+    qb = this.queryForRelationship(trx, parent, relationship);
+    const model = ((await qb) as any) as (BaseModel | undefined);
 
     return model ? model.toOrbitRecord() : null;
   }
@@ -333,20 +327,13 @@ export class Processor {
       record: { id, type },
       relationship
     } = expression;
-    const { model: relatedType } = this.schema.getRelationship(
-      type,
-      relationship
-    );
 
     let qb = this.queryForType(trx, type).mergeContext({
       recordId: id
     });
     const parent = (await qb.findById(id)) as BaseModel;
-    qb = parent
-      .$relatedQuery<BaseModel>(relationship, trx)
-      .select(this.fieldsForType(relatedType as string));
     const models = (await this.parseQueryExpression(
-      qb,
+      this.queryForRelationship(trx, parent, relationship),
       expression
     )) as BaseModel[];
 
@@ -370,6 +357,20 @@ export class Processor {
     }
 
     return qb;
+  }
+
+  queryForRelationship(
+    trx: Transaction,
+    model: BaseModel,
+    relationship: string
+  ) {
+    const { model: relatedType } = this.schema.getRelationship(
+      model.orbitType,
+      relationship
+    );
+    const fields = this.fieldsForType(relatedType as string);
+
+    return model.$relatedQuery<BaseModel>(relationship, trx).select(fields);
   }
 
   protected parseQueryExpressionPage(
