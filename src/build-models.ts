@@ -37,9 +37,11 @@ export class BaseModel extends Model {
     return snakeCaseMappers();
   }
 
-  static createNotFoundError(): Error {
-    // const { type, id } = ({} as any).op.record;
-    const error = new RecordNotFoundException('any', 'any');
+  static createNotFoundError() {
+    const context = arguments[0];
+    const type = (context && context.recordType) || 'unknown type';
+    const id = (context && context.recordId) || 'unknown id';
+    const error = new RecordNotFoundException(type, id);
     return error as any;
   }
 

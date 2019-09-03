@@ -28,7 +28,7 @@ import { tableize, underscore, foreignKey } from 'inflected';
 
 import { BaseModel, buildModels } from './build-models';
 import { migrateModels } from './migrate-models';
-import { groupIdentitiesByType } from './utils';
+import { groupRecordsByType } from './utils';
 
 export interface ProcessorSettings {
   schema: Schema;
@@ -140,7 +140,9 @@ export class Processor {
   }
 
   protected async updateRecord(op: UpdateRecordOperation, trx: Transaction) {
-    const qb = this.queryForType(trx, op.record.type);
+    const qb = this.queryForType(trx, op.record.type).mergeContext({
+      recordId: op.record.id
+    });
     const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
@@ -153,7 +155,9 @@ export class Processor {
 
   protected async removeRecord(op: RemoveRecordOperation, trx: Transaction) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
 
     const model = (await qb.findById(id)) as BaseModel;
     await qb.deleteById(id);
@@ -166,7 +170,9 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
 
     const model = await qb.patchAndFetchById(id, {
       [op.attribute]: op.value
@@ -180,7 +186,9 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -198,7 +206,9 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
     const relatedIds = op.relatedRecords.map(({ id }) => id);
 
     const model = await qb.upsertGraph(
@@ -221,7 +231,9 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
     const relatedId = op.relatedRecord.id;
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -235,7 +247,9 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
 
     const model = (await qb.findById(id)) as BaseModel;
     const relatedId = op.relatedRecord.id;
@@ -249,7 +263,9 @@ export class Processor {
 
   protected async findRecord(expression: FindRecord, trx: Transaction) {
     const { id, type } = expression.record;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
 
     const model = (await qb.findById(id)) as BaseModel;
 
@@ -266,12 +282,12 @@ export class Processor {
       )) as BaseModel[];
       return models.map(model => model.toOrbitRecord());
     } else if (records) {
-      const idsByType = groupIdentitiesByType(records);
+      const recordsByType = groupRecordsByType(records);
       const recordsById: Record<string, OrbitRecord> = {};
 
-      for (let type in idsByType) {
+      for (let type in recordsByType) {
         for (let record of await this.queryForType(trx, type, false).findByIds(
-          idsByType[type]
+          recordsByType[type]
         )) {
           recordsById[record.id] = record.toOrbitRecord();
         }
@@ -292,7 +308,9 @@ export class Processor {
       record: { id, type },
       relationship
     } = expression;
-    const qb = this.queryForType(trx, type);
+    const qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
     const { model: relatedType } = this.schema.getRelationship(
       type,
       relationship
@@ -320,7 +338,9 @@ export class Processor {
       relationship
     );
 
-    let qb = this.queryForType(trx, type);
+    let qb = this.queryForType(trx, type).mergeContext({
+      recordId: id
+    });
     const parent = (await qb.findById(id)) as BaseModel;
     qb = parent
       .$relatedQuery<BaseModel>(relationship, trx)
@@ -342,7 +362,7 @@ export class Processor {
 
     const qb = this.modelForType(type)
       .query(trx)
-      .context({ orbitType: type })
+      .context({ recordType: type })
       .select(fields);
 
     if (throwIfNotFound) {

@@ -17,11 +17,11 @@ export function castAttributeValue(value: unknown, type?: string) {
   return value;
 }
 
-export function groupIdentitiesByType(identities: RecordIdentity[]) {
-  const idsByType: Record<string, string[]> = {};
-  for (let identity of identities) {
-    idsByType[identity.type] = idsByType[identity.type] || [];
-    idsByType[identity.type].push(identity.id);
+export function groupRecordsByType(records: RecordIdentity[]) {
+  const recordsByType: Record<string, string[]> = {};
+  for (let identity of records) {
+    recordsByType[identity.type] = recordsByType[identity.type] || [];
+    recordsByType[identity.type].push(identity.id);
   }
-  return idsByType;
+  return recordsByType;
 }

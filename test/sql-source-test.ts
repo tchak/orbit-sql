@@ -1573,6 +1573,7 @@ QUnit.module('SQLSource', function(hooks) {
     try {
       await source.query(q => q.findRecord({ type: 'planet', id: 'jupiter' }));
     } catch (e) {
+      assert.equal(e.message, 'Record not found: planet:jupiter');
       assert.throws(() => {
         throw e;
       }, RecordNotFoundException);
