@@ -230,6 +230,27 @@ QUnit.module('SQLSource', function(hooks) {
         }, RecordNotFoundException);
       }
     });
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+
+      QUnit.test('will update', async function(assert) {
+        const record = await source.update(t =>
+          t.updateRecord({
+            type: 'article',
+            id: '1',
+            attributes: {
+              title: 'Article 1 bis'
+            }
+          })
+        );
+        assert.equal(record.type, article1.type);
+        assert.equal(record.id, article1.id);
+        assert.equal(record.attributes.title, 'Article 1 bis');
+      });
+    });
   });
 
   QUnit.module('removeRecord', function() {
@@ -242,6 +263,22 @@ QUnit.module('SQLSource', function(hooks) {
           throw error;
         }, RecordNotFoundException);
       }
+    });
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+
+      QUnit.test('will remove', async function(assert) {
+        await source.update(t =>
+          t.removeRecord({
+            type: 'article',
+            id: '1'
+          })
+        );
+        assert.deepEqual(await source.query(q => q.findRecords('article')), []);
+      });
     });
   });
 
@@ -257,6 +294,28 @@ QUnit.module('SQLSource', function(hooks) {
           throw error;
         }, RecordNotFoundException);
       }
+    });
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+
+      QUnit.test('will replace attribute', async function(assert) {
+        const record = await source.update(t =>
+          t.replaceAttribute(
+            {
+              type: 'article',
+              id: '1'
+            },
+            'title',
+            'Article 1 bis'
+          )
+        );
+        assert.equal(record.type, article1.type);
+        assert.equal(record.id, article1.id);
+        assert.equal(record.attributes.title, 'Article 1 bis');
+      });
     });
   });
 });
