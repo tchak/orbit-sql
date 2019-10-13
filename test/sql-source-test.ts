@@ -315,6 +315,57 @@ QUnit.module('SQLSource', function(hooks) {
         assert.equal(record.type, article1.type);
         assert.equal(record.id, article1.id);
         assert.equal(record.attributes.title, 'Article 1 bis');
+
+        const { attributes } = await source.query(q => q.findRecord(article1));
+        assert.equal(attributes.title, 'Article 1 bis');
+      });
+    });
+  });
+
+  QUnit.module('replaceRelatedRecord', function() {
+    QUnit.todo('not found', function() {});
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+    });
+  });
+
+  QUnit.module('replaceRelatedRecords', function() {
+    QUnit.todo('not found', function() {});
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+    });
+  });
+
+  QUnit.module('addToRelatedRecords', function() {
+    QUnit.todo('not found', function() {});
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article2)]);
+      });
+    });
+  });
+
+  QUnit.module('removeFromRelatedRecords', function() {
+    QUnit.todo('not found', function() {});
+
+    QUnit.module('with records', function(hooks) {
+      hooks.beforeEach(async function() {
+        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+      });
+
+      QUnit.test('will remove from related records', async function(assert) {
+        const [{ id, type }] = await source.query(t => t.findRelatedRecords(author1, 'articles'));
+        assert.equal(id, '1');
+        assert.equal(type, 'article');
+        await source.update(t => t.removeFromRelatedRecords(author1, 'articles', article1));
+        assert.deepEqual(await source.query(t => t.findRelatedRecords(author1, 'articles')), []);
       });
     });
   });
