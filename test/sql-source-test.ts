@@ -361,11 +361,18 @@ QUnit.module('SQLSource', function(hooks) {
       });
 
       QUnit.test('will remove from related records', async function(assert) {
-        const [{ id, type }] = await source.query(t => t.findRelatedRecords(author1, 'articles'));
+        const [{ id, type }] = await source.query(t =>
+          t.findRelatedRecords(author1, 'articles')
+        );
         assert.equal(id, '1');
         assert.equal(type, 'article');
-        await source.update(t => t.removeFromRelatedRecords(author1, 'articles', article1));
-        assert.deepEqual(await source.query(t => t.findRelatedRecords(author1, 'articles')), []);
+        await source.update(t =>
+          t.removeFromRelatedRecords(author1, 'articles', article1)
+        );
+        assert.deepEqual(
+          await source.query(t => t.findRelatedRecords(author1, 'articles')),
+          []
+        );
       });
     });
   });

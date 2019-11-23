@@ -233,7 +233,10 @@ QUnit.module('SQLSource (legacy)', function(hooks) {
         attributes: { name: 'Jupiter' },
         relationships: {
           moons: {
-            data: [{ type: 'moon', id: 'm1' }, { type: 'moon', id: 'm2' }]
+            data: [
+              { type: 'moon', id: 'm1' },
+              { type: 'moon', id: 'm2' }
+            ]
           }
         }
       };
@@ -1088,7 +1091,10 @@ QUnit.module('SQLSource (legacy)', function(hooks) {
       },
       relationships: {
         moons: {
-          data: [{ type: 'moon', id: 'phobos' }, { type: 'moon', id: 'deimos' }]
+          data: [
+            { type: 'moon', id: 'phobos' },
+            { type: 'moon', id: 'deimos' }
+          ]
         }
       }
     };

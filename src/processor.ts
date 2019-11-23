@@ -314,7 +314,7 @@ export class Processor {
     });
     const parent = (await qb.findById(id)) as BaseModel;
     qb = this.queryForRelationship(trx, parent, relationship);
-    const model = ((await qb) as any) as (BaseModel | undefined);
+    const model = ((await qb) as any) as BaseModel | undefined;
 
     return model ? model.toOrbitRecord() : null;
   }

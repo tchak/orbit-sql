@@ -19,6 +19,7 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': ['off'],
     '@typescript-eslint/no-explicit-any': ['off'],
     '@typescript-eslint/explicit-member-accessibility': ['off'],
+    '@typescript-eslint/no-empty-function': ['off'],
     'prefer-const': ['off'],
     'prefer-rest-params': ['off']
   }
