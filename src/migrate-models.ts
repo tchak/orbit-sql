@@ -19,7 +19,7 @@ export async function migrateModel(db: Knex, schema: Schema, type: string) {
     return;
   }
 
-  await db.schema.createTable(tableName, table => {
+  await db.schema.createTable(tableName, (table) => {
     table.uuid('id').primary();
     table.timestamps(true, true);
 
@@ -70,7 +70,7 @@ export async function migrateModel(db: Knex, schema: Schema, type: string) {
           if (inverseKind === 'hasMany') {
             joinTables[tableizeJoinTable(property, inverse)] = [
               columnName,
-              foreignKey(inverse)
+              foreignKey(inverse),
             ];
           }
         }
@@ -80,7 +80,7 @@ export async function migrateModel(db: Knex, schema: Schema, type: string) {
 
   for (let joinTableName in joinTables) {
     if (!(await db.schema.hasTable(joinTableName))) {
-      await db.schema.createTable(joinTableName, table => {
+      await db.schema.createTable(joinTableName, (table) => {
         table.uuid(joinTables[joinTableName][0]);
         table.uuid(joinTables[joinTableName][1]);
       });

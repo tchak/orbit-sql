@@ -10,7 +10,7 @@ import Orbit, {
   RecordOperation,
   updatable,
   Updatable,
-  Schema
+  Schema,
 } from '@orbit/data';
 import Knex from 'knex';
 
@@ -65,7 +65,7 @@ export default class SQLSource extends Source implements Queryable, Updatable {
     let processorSettings: ProcessorSettings = {
       knex: settings.knex as Knex.Config,
       schema: settings.schema as Schema,
-      autoMigrate: settings.autoMigrate
+      autoMigrate: settings.autoMigrate,
     };
 
     this._processor = new Processor(processorSettings);

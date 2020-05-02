@@ -4,7 +4,7 @@ import SQLSource from '../src';
 
 QUnit.config.testTimeout = 1000;
 
-QUnit.module('SQLSource', function(hooks) {
+QUnit.module('SQLSource', function (hooks) {
   let schema: Schema;
   let source: SQLSource;
 
@@ -13,78 +13,78 @@ QUnit.module('SQLSource', function(hooks) {
     id: '1',
     attributes: {
       firstName: 'Paul',
-      lastName: 'Chavard'
-    }
+      lastName: 'Chavard',
+    },
   };
   const article1 = {
     type: 'article',
     id: '1',
     attributes: {
-      title: 'Article 1'
+      title: 'Article 1',
     },
     relationships: {
       author: {
-        data: { type: 'author', id: '1' }
-      }
-    }
+        data: { type: 'author', id: '1' },
+      },
+    },
   };
   const article2 = {
     type: 'article',
     id: '2',
     attributes: {
-      title: 'Article 2'
-    }
+      title: 'Article 2',
+    },
   };
 
-  hooks.beforeEach(async function() {
+  hooks.beforeEach(async function () {
     schema = new Schema({
       models: {
         author: {
           attributes: {
             firstName: { type: 'string' },
-            lastName: { type: 'string' }
+            lastName: { type: 'string' },
           },
           relationships: {
             articles: {
               type: 'hasMany',
               model: 'article',
-              inverse: 'author'
-            }
-          }
+              inverse: 'author',
+            },
+          },
         },
         article: {
           attributes: {
             title: { type: 'string' },
             publishedOn: { type: 'date' },
             createdAt: { type: 'datetime' },
-            updatedAt: { type: 'datetime' }
+            updatedAt: { type: 'datetime' },
           },
           relationships: {
             author: {
               type: 'hasOne',
               model: 'author',
-              inverse: 'articles'
+              inverse: 'articles',
             },
             tags: {
               type: 'hasMany',
               model: 'tag',
-              inverse: 'articles'
-            }
-          }
+              inverse: 'articles',
+            },
+          },
         },
         tag: {
           attributes: {
-            name: { type: 'string' }
+            name: { type: 'string' },
           },
           relationships: {
             articles: {
               type: 'hasMany',
               model: 'article',
-              inverse: 'tags'
-            }
-          }
-        }
-      }
+              inverse: 'tags',
+            },
+          },
+        },
+      },
     });
 
     source = new SQLSource({
@@ -92,26 +92,26 @@ QUnit.module('SQLSource', function(hooks) {
       knex: {
         client: 'sqlite3',
         connection: { filename: ':memory:' },
-        useNullAsDefault: true
-      }
+        useNullAsDefault: true,
+      },
     });
     await source.activated;
   });
 
-  hooks.afterEach(async function() {
+  hooks.afterEach(async function () {
     await source.deactivate();
   });
 
-  QUnit.module('base', function() {
-    QUnit.test('it exists', function(assert) {
+  QUnit.module('base', function () {
+    QUnit.test('it exists', function (assert) {
       assert.ok(source instanceof SQLSource);
     });
   });
 
-  QUnit.module('findRecord', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('findRecord', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.query(q => q.findRecord({ type: 'author', id: '1' }));
+        await source.query((q) => q.findRecord({ type: 'author', id: '1' }));
       } catch (error) {
         assert.equal(error.message, 'Record not found: author:1');
         assert.throws(() => {
@@ -120,13 +120,16 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('find', async function(assert) {
-        let record = await source.query(q =>
+      QUnit.test('find', async function (assert) {
+        let record = await source.query((q) =>
           q.findRecord({ type: 'author', id: '1' })
         );
         assert.deepEqual(record, author1, 'should find the record');
@@ -134,28 +137,31 @@ QUnit.module('SQLSource', function(hooks) {
     });
   });
 
-  QUnit.module('findRecords', function() {
-    QUnit.test('empty', async function(assert) {
-      let records = await source.query(q => q.findRecords('author'));
+  QUnit.module('findRecords', function () {
+    QUnit.test('empty', async function (assert) {
+      let records = await source.query((q) => q.findRecords('author'));
       assert.deepEqual(records, [], 'should be empty');
     });
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('find', async function(assert) {
-        let records = await source.query(q => q.findRecords('author'));
+      QUnit.test('find', async function (assert) {
+        let records = await source.query((q) => q.findRecords('author'));
         assert.deepEqual(records, [author1], 'should find records');
       });
     });
   });
 
-  QUnit.module('findRelatedRecord', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('findRelatedRecord', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.query(q =>
+        await source.query((q) =>
           q.findRelatedRecord({ type: 'article', id: '1' }, 'author')
         );
       } catch (error) {
@@ -166,19 +172,19 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.test('empty', async function(assert) {
-      await source.update(t => t.addRecord(article2));
-      let record = await source.query(q =>
+    QUnit.test('empty', async function (assert) {
+      await source.update((t) => t.addRecord(article2));
+      let record = await source.query((q) =>
         q.findRelatedRecord({ type: 'article', id: '2' }, 'author')
       );
       assert.deepEqual(record, null, 'should be empty');
     });
   });
 
-  QUnit.module('findRelatedRecords', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('findRelatedRecords', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.query(q =>
+        await source.query((q) =>
           q.findRelatedRecords({ type: 'author', id: '1' }, 'articles')
         );
       } catch (error) {
@@ -189,20 +195,20 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.module('1-n', function() {
-      QUnit.test('empty', async function(assert) {
-        await source.update(t => t.addRecord(author1));
-        let records = await source.query(q =>
+    QUnit.module('1-n', function () {
+      QUnit.test('empty', async function (assert) {
+        await source.update((t) => t.addRecord(author1));
+        let records = await source.query((q) =>
           q.findRelatedRecords({ type: 'author', id: '1' }, 'articles')
         );
         assert.deepEqual(records, [], 'should be empty');
       });
     });
 
-    QUnit.module('n-n', function() {
-      QUnit.test('empty', async function(assert) {
-        await source.update(t => t.addRecord(article2));
-        let records = await source.query(q =>
+    QUnit.module('n-n', function () {
+      QUnit.test('empty', async function (assert) {
+        await source.update((t) => t.addRecord(article2));
+        let records = await source.query((q) =>
           q.findRelatedRecords({ type: 'article', id: '2' }, 'tags')
         );
         assert.deepEqual(records, [], 'should be empty');
@@ -210,19 +216,19 @@ QUnit.module('SQLSource', function(hooks) {
     });
   });
 
-  QUnit.module('addRecord', function() {
-    QUnit.test('with attribute', async function(assert) {
-      const record = await source.update(t => t.addRecord(article2));
+  QUnit.module('addRecord', function () {
+    QUnit.test('with attribute', async function (assert) {
+      const record = await source.update((t) => t.addRecord(article2));
       assert.equal(record.type, article2.type);
       assert.equal(record.id, article2.id);
       assert.equal(record.attributes.title, article2.attributes.title);
     });
   });
 
-  QUnit.module('updateRecord', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('updateRecord', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.update(t => t.updateRecord({ type: 'author', id: '1' }));
+        await source.update((t) => t.updateRecord({ type: 'author', id: '1' }));
       } catch (error) {
         assert.equal(error.message, 'Record not found: author:1');
         assert.throws(() => {
@@ -231,19 +237,22 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('will update', async function(assert) {
-        const record = await source.update(t =>
+      QUnit.test('will update', async function (assert) {
+        const record = await source.update((t) =>
           t.updateRecord({
             type: 'article',
             id: '1',
             attributes: {
-              title: 'Article 1 bis'
-            }
+              title: 'Article 1 bis',
+            },
           })
         );
         assert.equal(record.type, article1.type);
@@ -253,10 +262,10 @@ QUnit.module('SQLSource', function(hooks) {
     });
   });
 
-  QUnit.module('removeRecord', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('removeRecord', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.update(t => t.removeRecord({ type: 'author', id: '1' }));
+        await source.update((t) => t.removeRecord({ type: 'author', id: '1' }));
       } catch (error) {
         assert.equal(error.message, 'Record not found: author:1');
         assert.throws(() => {
@@ -265,27 +274,33 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('will remove', async function(assert) {
-        await source.update(t =>
+      QUnit.test('will remove', async function (assert) {
+        await source.update((t) =>
           t.removeRecord({
             type: 'article',
-            id: '1'
+            id: '1',
           })
         );
-        assert.deepEqual(await source.query(q => q.findRecords('article')), []);
+        assert.deepEqual(
+          await source.query((q) => q.findRecords('article')),
+          []
+        );
       });
     });
   });
 
-  QUnit.module('replaceAttribute', function() {
-    QUnit.test('not found', async function(assert) {
+  QUnit.module('replaceAttribute', function () {
+    QUnit.test('not found', async function (assert) {
       try {
-        await source.update(t =>
+        await source.update((t) =>
           t.replaceAttribute({ type: 'author', id: '1' }, 'firstName', 'Paul')
         );
       } catch (error) {
@@ -296,17 +311,20 @@ QUnit.module('SQLSource', function(hooks) {
       }
     });
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('will replace attribute', async function(assert) {
-        const record = await source.update(t =>
+      QUnit.test('will replace attribute', async function (assert) {
+        const record = await source.update((t) =>
           t.replaceAttribute(
             {
               type: 'article',
-              id: '1'
+              id: '1',
             },
             'title',
             'Article 1 bis'
@@ -316,61 +334,75 @@ QUnit.module('SQLSource', function(hooks) {
         assert.equal(record.id, article1.id);
         assert.equal(record.attributes.title, 'Article 1 bis');
 
-        const { attributes } = await source.query(q => q.findRecord(article1));
+        const { attributes } = await source.query((q) =>
+          q.findRecord(article1)
+        );
         assert.equal(attributes.title, 'Article 1 bis');
       });
     });
   });
 
-  QUnit.module('replaceRelatedRecord', function() {
-    QUnit.todo('not found', function() {});
+  QUnit.module('replaceRelatedRecord', function () {
+    QUnit.todo('not found', function () {});
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
     });
   });
 
-  QUnit.module('replaceRelatedRecords', function() {
-    QUnit.todo('not found', function() {});
+  QUnit.module('replaceRelatedRecords', function () {
+    QUnit.todo('not found', function () {});
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
     });
   });
 
-  QUnit.module('addToRelatedRecords', function() {
-    QUnit.todo('not found', function() {});
+  QUnit.module('addToRelatedRecords', function () {
+    QUnit.todo('not found', function () {});
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article2)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article2),
+        ]);
       });
     });
   });
 
-  QUnit.module('removeFromRelatedRecords', function() {
-    QUnit.todo('not found', function() {});
+  QUnit.module('removeFromRelatedRecords', function () {
+    QUnit.todo('not found', function () {});
 
-    QUnit.module('with records', function(hooks) {
-      hooks.beforeEach(async function() {
-        await source.update(t => [t.addRecord(author1), t.addRecord(article1)]);
+    QUnit.module('with records', function (hooks) {
+      hooks.beforeEach(async function () {
+        await source.update((t) => [
+          t.addRecord(author1),
+          t.addRecord(article1),
+        ]);
       });
 
-      QUnit.test('will remove from related records', async function(assert) {
-        const [{ id, type }] = await source.query(t =>
+      QUnit.test('will remove from related records', async function (assert) {
+        const [{ id, type }] = await source.query((t) =>
           t.findRelatedRecords(author1, 'articles')
         );
         assert.equal(id, '1');
         assert.equal(type, 'article');
-        await source.update(t =>
+        await source.update((t) =>
           t.removeFromRelatedRecords(author1, 'articles', article1)
         );
         assert.deepEqual(
-          await source.query(t => t.findRelatedRecords(author1, 'articles')),
+          await source.query((t) => t.findRelatedRecords(author1, 'articles')),
           []
         );
       });

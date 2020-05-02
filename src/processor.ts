@@ -20,7 +20,7 @@ import {
   RecordIdentity,
   AttributeFilterSpecifier,
   Schema,
-  QueryExpression
+  QueryExpression,
 } from '@orbit/data';
 import Knex, { Config } from 'knex';
 import { QueryBuilder, ModelClass, transaction, Transaction } from 'objection';
@@ -70,7 +70,7 @@ export class Processor {
   }
 
   async patch(operations: RecordOperation[]) {
-    return transaction(this._db as Knex, async trx => {
+    return transaction(this._db as Knex, async (trx) => {
       const result: OrbitRecord[] = [];
       for (let operation of operations) {
         result.push(await this.processOperation(operation, trx));
@@ -80,7 +80,7 @@ export class Processor {
   }
 
   async query(query: Query) {
-    return transaction(this._db as Knex, async trx => {
+    return transaction(this._db as Knex, async (trx) => {
       return this.processQueryExpression(query.expression, trx);
     });
   }
@@ -133,7 +133,7 @@ export class Processor {
     const model = await qb.upsertGraph(data, {
       insertMissing: true,
       relate: true,
-      unrelate: true
+      unrelate: true,
     });
 
     return model.toOrbitRecord();
@@ -141,13 +141,13 @@ export class Processor {
 
   protected async updateRecord(op: UpdateRecordOperation, trx: Transaction) {
     const qb = this.queryForType(trx, op.record.type).mergeContext({
-      recordId: op.record.id
+      recordId: op.record.id,
     });
     const data = this.parseOrbitRecord(op.record);
 
     const model = await qb.upsertGraph(data, {
       relate: true,
-      unrelate: true
+      unrelate: true,
     });
 
     return model.toOrbitRecord();
@@ -156,7 +156,7 @@ export class Processor {
   protected async removeRecord(op: RemoveRecordOperation, trx: Transaction) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -171,11 +171,11 @@ export class Processor {
   ) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
 
     const model = await qb.patchAndFetchById(id, {
-      [op.attribute]: op.value
+      [op.attribute]: op.value,
     });
 
     return model.toOrbitRecord();
@@ -187,7 +187,7 @@ export class Processor {
   ) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
 
@@ -207,19 +207,19 @@ export class Processor {
   ) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
     const relatedIds = op.relatedRecords.map(({ id }) => id);
 
     const model = await qb.upsertGraph(
       {
         id,
-        [op.relationship]: relatedIds.map(id => ({ id }))
+        [op.relationship]: relatedIds.map((id) => ({ id })),
       },
       {
         insertMissing: false,
         relate: false,
-        unrelate: true
+        unrelate: true,
       }
     );
 
@@ -232,7 +232,7 @@ export class Processor {
   ) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
     const relatedId = op.relatedRecord.id;
 
@@ -248,7 +248,7 @@ export class Processor {
   ) {
     const { type, id } = op.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -264,7 +264,7 @@ export class Processor {
   protected async findRecord(expression: FindRecord, trx: Transaction) {
     const { id, type } = expression.record;
     const qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
 
     const model = (await qb.findById(id)) as BaseModel;
@@ -280,7 +280,7 @@ export class Processor {
         qb,
         expression
       )) as BaseModel[];
-      return models.map(model => model.toOrbitRecord());
+      return models.map((model) => model.toOrbitRecord());
     } else if (records) {
       const recordsByType = groupRecordsByType(records);
       const recordsById: Record<string, OrbitRecord> = {};
@@ -292,7 +292,9 @@ export class Processor {
           recordsById[record.id] = record.toOrbitRecord();
         }
       }
-      return records.map(({ id }) => recordsById[id]).filter(record => record);
+      return records
+        .map(({ id }) => recordsById[id])
+        .filter((record) => record);
     }
     throw new QueryExpressionParseError(
       `FindRecords with no type or records is not recognized for SQLSource.`,
@@ -306,11 +308,11 @@ export class Processor {
   ) {
     const {
       record: { id, type },
-      relationship
+      relationship,
     } = expression;
 
     let qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
     const parent = (await qb.findById(id)) as BaseModel;
     qb = this.queryForRelationship(trx, parent, relationship);
@@ -325,11 +327,11 @@ export class Processor {
   ) {
     const {
       record: { id, type },
-      relationship
+      relationship,
     } = expression;
 
     let qb = this.queryForType(trx, type).mergeContext({
-      recordId: id
+      recordId: id,
     });
     const parent = (await qb.findById(id)) as BaseModel;
     const models = (await this.parseQueryExpression(
@@ -337,7 +339,7 @@ export class Processor {
       expression
     )) as BaseModel[];
 
-    return models.map(model => model.toOrbitRecord());
+    return models.map((model) => model.toOrbitRecord());
   }
 
   modelForType(type: string): ModelClass<BaseModel> {
@@ -487,7 +489,7 @@ export class Processor {
     }
 
     if (record.attributes) {
-      this.schema.eachAttribute(record.type, property => {
+      this.schema.eachAttribute(record.type, (property) => {
         if (record.attributes && record.attributes[property] !== undefined) {
           properties[property] = record.attributes[property];
         }
@@ -517,7 +519,7 @@ export class Processor {
     const tableName = tableize(type);
     const fields: string[] = [`${tableName}.id`];
 
-    this.schema.eachAttribute(type, property => {
+    this.schema.eachAttribute(type, (property) => {
       fields.push(`${tableName}.${underscore(property)}`);
     });
 

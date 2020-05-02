@@ -2,13 +2,13 @@ import {
   Model,
   ModelClass,
   RelationMapping,
-  snakeCaseMappers
+  snakeCaseMappers,
 } from 'objection';
 import {
   Schema,
   RecordNotFoundException,
   RecordRelationship,
-  Record as OrbitRecord
+  Record as OrbitRecord,
 } from '@orbit/data';
 import { foreignKey, tableize } from 'inflected';
 
@@ -52,7 +52,7 @@ export class BaseModel extends Model {
     const result = this.toJSON() as any;
     const record: OrbitRecord = {
       type,
-      id: result.id
+      id: result.id,
     };
 
     schema.eachAttribute(type, (property, attribute) => {
@@ -72,8 +72,8 @@ export class BaseModel extends Model {
           (relationships as Record<string, unknown>)[property] = {
             data: {
               type: type as string,
-              id: id as string
-            }
+              id: id as string,
+            },
           };
           record.relationships = relationships;
         }
@@ -117,7 +117,7 @@ export function buildModel(
       }
 
       static get relationMappings() {
-        const relationMappings: Record<string, RelationMapping> = {};
+        const relationMappings: Record<string, RelationMapping<BaseModel>> = {};
         schema.eachRelationship(
           type,
           (property, { type: kind, model: type, inverse }) => {
@@ -137,7 +137,7 @@ export function buildModel(
             const inverseColumnName = foreignKey(inverse);
             const relationTableName = tableize(type);
             const relationModel = buildModel(schema, type, models);
-            let relationMapping: RelationMapping;
+            let relationMapping: RelationMapping<BaseModel>;
 
             if (kind === 'hasOne') {
               relationMapping = {
@@ -145,8 +145,8 @@ export function buildModel(
                 modelClass: relationModel,
                 join: {
                   from: `${tableName}.${relationColumnName}`,
-                  to: `${relationTableName}.id`
-                }
+                  to: `${relationTableName}.id`,
+                },
               };
             } else {
               const { type: inverseKind } = schema.getRelationship(
@@ -164,10 +164,10 @@ export function buildModel(
                     from: `${tableName}.id`,
                     through: {
                       from: `${joinTableName}.${relationColumnName}`,
-                      to: `${joinTableName}.${inverseColumnName}`
+                      to: `${joinTableName}.${inverseColumnName}`,
                     },
-                    to: `${relationTableName}.id`
-                  }
+                    to: `${relationTableName}.id`,
+                  },
                 };
               } else {
                 relationMapping = {
@@ -175,8 +175,8 @@ export function buildModel(
                   modelClass: relationModel,
                   join: {
                     from: `${tableName}.id`,
-                    to: `${relationTableName}.${inverseColumnName}`
-                  }
+                    to: `${relationTableName}.${inverseColumnName}`,
+                  },
                 };
               }
             }
