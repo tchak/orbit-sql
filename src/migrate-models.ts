@@ -1,16 +1,20 @@
-import { Schema } from '@orbit/data';
+import { RecordSchema } from '@orbit/records';
 import Knex from 'knex';
 import { underscore, foreignKey, tableize } from 'inflected';
 
 import { tableizeJoinTable } from './utils';
 
-export async function migrateModels(db: Knex, schema: Schema) {
+export async function migrateModels(db: Knex, schema: RecordSchema) {
   for (let type in schema.models) {
     await migrateModel(db, schema, type);
   }
 }
 
-export async function migrateModel(db: Knex, schema: Schema, type: string) {
+export async function migrateModel(
+  db: Knex,
+  schema: RecordSchema,
+  type: string
+) {
   const tableName = tableize(type);
   const joinTables: Record<string, [string, string]> = {};
   const hasTable = await db.schema.hasTable(tableName);
@@ -46,36 +50,31 @@ export async function migrateModel(db: Knex, schema: Schema, type: string) {
       }
     });
 
-    schema.eachRelationship(
-      type,
-      (property, { type: kind, model: type, inverse }) => {
-        const columnName = foreignKey(property);
-        if (kind === 'hasOne') {
-          table.uuid(columnName);
-        } else {
-          if (!inverse || !type) {
-            throw new Error(
-              `SQLSource: "type" and "inverse" are required on a relationship`
-            );
-          }
+    schema.eachRelationship(type, (property, { kind, type, inverse }) => {
+      const columnName = foreignKey(property);
+      if (kind === 'hasOne') {
+        table.uuid(columnName);
+      } else {
+        if (!inverse || !type) {
+          throw new Error(
+            `SQLSource: "type" and "inverse" are required on a relationship`
+          );
+        }
 
-          if (Array.isArray(type)) {
-            throw new Error(
-              `SQLSource: polymorphic types are not supported yet`
-            );
-          }
+        if (Array.isArray(type)) {
+          throw new Error(`SQLSource: polymorphic types are not supported yet`);
+        }
 
-          let { type: inverseKind } = schema.getRelationship(type, inverse);
+        let relDef = schema.getRelationship(type, inverse);
 
-          if (inverseKind === 'hasMany') {
-            joinTables[tableizeJoinTable(property, inverse)] = [
-              columnName,
-              foreignKey(inverse),
-            ];
-          }
+        if (relDef?.kind === 'hasMany') {
+          joinTables[tableizeJoinTable(property, inverse)] = [
+            columnName,
+            foreignKey(inverse),
+          ];
         }
       }
-    );
+    });
   });
 
   for (let joinTableName in joinTables) {

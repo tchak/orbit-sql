@@ -1,62 +1,61 @@
-import Orbit, {
-  Query,
-  QueryOrExpression,
-  queryable,
-  Queryable,
-  Source,
-  SourceSettings,
-  Transform,
-  TransformOrOperations,
+import { Assertion } from '@orbit/core';
+import { queryable, updatable, RequestOptions } from '@orbit/data';
+import {
+  RecordSourceQueryOptions,
+  RecordSchema,
   RecordOperation,
-  updatable,
-  Updatable,
-  Schema,
-} from '@orbit/data';
+  RecordSourceSettings,
+  RecordQueryable,
+  RecordUpdatable,
+  RecordSource,
+  RecordTransform,
+  RecordQuery,
+} from '@orbit/records';
 import Knex from 'knex';
 
 import { Processor, ProcessorSettings } from './processor';
 
-const { assert } = Orbit;
+export interface SQLQueryOptions extends RecordSourceQueryOptions {}
 
-export interface SQLSourceSettings extends SourceSettings {
+export interface SQLTransformOptions extends RequestOptions {}
+
+export interface SQLSourceSettings
+  extends RecordSourceSettings<SQLQueryOptions, SQLTransformOptions> {
   knex?: Knex.Config;
   autoMigrate?: boolean;
 }
+
+export interface SQLSource
+  extends RecordSource<SQLQueryOptions, SQLTransformOptions>,
+    RecordQueryable<unknown>,
+    RecordUpdatable<unknown> {}
 
 /**
  * Source for storing data in SQL database.
  */
 @queryable
 @updatable
-export default class SQLSource extends Source implements Queryable, Updatable {
+export class SQLSource extends RecordSource<
+  SQLQueryOptions,
+  SQLTransformOptions
+> {
   protected _processor: Processor;
 
-  // Queryable interface stubs
-  query: (
-    queryOrExpression: QueryOrExpression,
-    options?: object,
-    id?: string
-  ) => Promise<any>;
-
-  // Updatable interface stubs
-  update: (
-    transformOrOperations: TransformOrOperations,
-    options?: object,
-    id?: string
-  ) => Promise<any>;
-
-  constructor(settings: SQLSourceSettings = {}) {
-    assert(
-      "SQLSource's `schema` must be specified in `settings.schema` constructor argument",
-      !!settings.schema
-    );
-
-    assert(
-      "SQLSource's `knex` must be specified in `settings.knex` constructor argument",
-      !!settings.knex
-    );
-
+  constructor(settings: SQLSourceSettings) {
     settings.name = settings.name || 'sql';
+
+    if (!settings.schema) {
+      new Assertion(
+        "SQLSource's `schema` must be specified in `settings.schema` constructor argument"
+      );
+    }
+
+    if (!settings.knex) {
+      new Assertion(
+        "SQLSource's `knex` must be specified in `settings.knex` constructor argument"
+      );
+    }
+
     const autoActivate = settings.autoActivate;
     settings.autoActivate = false;
 
@@ -64,7 +63,7 @@ export default class SQLSource extends Source implements Queryable, Updatable {
 
     let processorSettings: ProcessorSettings = {
       knex: settings.knex as Knex.Config,
-      schema: settings.schema as Schema,
+      schema: settings.schema as RecordSchema,
       autoMigrate: settings.autoMigrate,
     };
 
@@ -89,13 +88,16 @@ export default class SQLSource extends Source implements Queryable, Updatable {
   // Updatable interface implementation
   /////////////////////////////////////////////////////////////////////////////
 
-  async _update(transform: Transform): Promise<any> {
+  async _update(transform: RecordTransform): Promise<any> {
     if (!this.transformLog.contains(transform.id)) {
-      const results = await this._processor.patch(
+      const data = await this._processor.patch(
         transform.operations as RecordOperation[]
       );
       await this.transformed([transform]);
-      return transform.operations.length === 1 ? results[0] : results;
+      return {
+        transform: [transform],
+        data: transform.operations.length === 1 ? data[0] : data,
+      };
     }
   }
 
@@ -103,7 +105,11 @@ export default class SQLSource extends Source implements Queryable, Updatable {
   // Queryable interface implementation
   /////////////////////////////////////////////////////////////////////////////
 
-  async _query(query: Query): Promise<any> {
-    return this._processor.query(query);
+  async _query(query: RecordQuery): Promise<any> {
+    const data = await this._processor.query(query);
+    return {
+      transform: [],
+      data: query.expressions.length === 1 ? data[0] : data,
+    };
   }
 }

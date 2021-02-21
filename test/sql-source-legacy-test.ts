@@ -1,11 +1,11 @@
 import {
   Record,
   RecordNotFoundException,
-  Schema,
+  RecordSchema,
   equalRecordIdentities,
   recordsInclude,
   recordsIncludeAll,
-} from '@orbit/data';
+} from '@orbit/records';
 import { clone } from '@orbit/utils';
 import SQLSource from '../src';
 
@@ -14,11 +14,11 @@ const { test } = QUnit;
 QUnit.config.testTimeout = 1000;
 
 QUnit.module('SQLSource (legacy)', function (hooks) {
-  let schema: Schema;
+  let schema: RecordSchema;
   let source: SQLSource;
 
   hooks.beforeEach(async function () {
-    schema = new Schema({
+    schema = new RecordSchema({
       models: {
         planet: {
           attributes: {
@@ -28,7 +28,7 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
             atmosphere: { type: 'boolean' },
           },
           relationships: {
-            moons: { type: 'hasMany', model: 'moon', inverse: 'planet' },
+            moons: { kind: 'hasMany', type: 'moon', inverse: 'planet' },
           },
         },
         moon: {
@@ -36,7 +36,7 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
             name: { type: 'string' },
           },
           relationships: {
-            planet: { type: 'hasOne', model: 'planet', inverse: 'moons' },
+            planet: { kind: 'hasOne', type: 'planet', inverse: 'moons' },
           },
         },
       },
@@ -109,13 +109,13 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
 
       let models = clone(schema.models);
       models.planet.relationships.inhabitants = {
-        type: 'hasMany',
-        model: 'person',
+        kind: 'hasMany',
+        type: 'person',
         inverse: 'planet',
       };
       models.person = {
         relationships: {
-          planet: { type: 'hasOne', model: 'planet', inverse: 'inhabitants' },
+          planet: { kind: 'hasOne', type: 'planet', inverse: 'inhabitants' },
         },
       };
 
@@ -179,14 +179,20 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
       ]);
 
       assert.deepEqual(
-        (await source.query((q) => q.findRecord({ type: 'moon', id: 'm1' })))
-          .relationships.planet.data,
+        (
+          await source.query<Record>((q) =>
+            q.findRecord({ type: 'moon', id: 'm1' })
+          )
+        ).relationships?.planet.data,
         { type: 'planet', id: 'p1' },
         'Jupiter has been assigned to Io'
       );
       assert.deepEqual(
-        (await source.query((q) => q.findRecord({ type: 'moon', id: 'm2' })))
-          .relationships.planet.data,
+        (
+          await source.query<Record>((q) =>
+            q.findRecord({ type: 'moon', id: 'm2' })
+          )
+        ).relationships?.planet.data,
         { type: 'planet', id: 'p1' },
         'Jupiter has been assigned to Europa'
       );
@@ -200,14 +206,20 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
       );
 
       assert.equal(
-        (await source.query((q) => q.findRecord({ type: 'moon', id: 'm1' })))
-          .relationships.planet.data,
+        (
+          await source.query<Record>((q) =>
+            q.findRecord({ type: 'moon', id: 'm1' })
+          )
+        ).relationships?.planet.data,
         undefined,
         'Jupiter has been cleared from Io'
       );
       assert.equal(
-        (await source.query((q) => q.findRecord({ type: 'moon', id: 'm2' })))
-          .relationships.planet.data,
+        (
+          await source.query<Record>((q) =>
+            q.findRecord({ type: 'moon', id: 'm2' })
+          )
+        ).relationships?.planet.data,
         undefined,
         'Jupiter has been cleared from Europa'
       );
@@ -340,46 +352,47 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
     }
   );
 
-  QUnit.skip("#update adds hasOne if record doesn't exist", async function (
-    assert
-  ) {
-    assert.expect(2);
+  QUnit.skip(
+    "#update adds hasOne if record doesn't exist",
+    async function (assert) {
+      assert.expect(2);
 
-    const tb = source.transformBuilder;
-    const replacePlanet = tb.replaceRelatedRecord(
-      { type: 'moon', id: 'moon1' },
-      'planet',
-      { type: 'planet', id: 'p1' }
-    );
+      const tb = source.transformBuilder;
+      const replacePlanet = tb.replaceRelatedRecord(
+        { type: 'moon', id: 'moon1' },
+        'planet',
+        { type: 'planet', id: 'p1' }
+      );
 
-    const addToMoons = tb.addToRelatedRecords(
-      { type: 'planet', id: 'p1' },
-      'moons',
-      { type: 'moon', id: 'moon1' }
-    );
+      const addToMoons = tb.addToRelatedRecords(
+        { type: 'planet', id: 'p1' },
+        'moons',
+        { type: 'moon', id: 'moon1' }
+      );
 
-    let order = 0;
-    source.on('transform', ({ operations }) => {
-      order++;
-      if (order === 1) {
-        assert.deepEqual(
-          operations[0],
-          replacePlanet,
-          'applied replacePlanet operation'
-        );
-      } else if (order === 2) {
-        assert.deepEqual(
-          operations[0],
-          addToMoons,
-          'applied addToMoons operation'
-        );
-      } else {
-        assert.ok(false, 'too many ops');
-      }
-    });
+      let order = 0;
+      source.on('transform', ({ operations }) => {
+        order++;
+        if (order === 1) {
+          assert.deepEqual(
+            operations[0],
+            replacePlanet,
+            'applied replacePlanet operation'
+          );
+        } else if (order === 2) {
+          assert.deepEqual(
+            operations[0],
+            addToMoons,
+            'applied addToMoons operation'
+          );
+        } else {
+          assert.ok(false, 'too many ops');
+        }
+      });
 
-    await source.update([replacePlanet]);
-  });
+      await source.update([replacePlanet]);
+    }
+  );
 
   QUnit.skip(
     '#update does not add link to hasMany if link already exists',
@@ -562,16 +575,16 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
     async function (assert) {
       assert.expect(5);
 
-      const hasOneSchema = new Schema({
+      const hasOneSchema = new RecordSchema({
         models: {
           one: {
             relationships: {
-              two: { type: 'hasOne', model: 'two', inverse: 'one' },
+              two: { kind: 'hasOne', type: 'two', inverse: 'one' },
             },
           },
           two: {
             relationships: {
-              one: { type: 'hasOne', model: 'one', inverse: 'two' },
+              one: { kind: 'hasOne', type: 'one', inverse: 'two' },
             },
           },
         },
@@ -600,21 +613,21 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
         }),
       ]);
 
-      const one = await source.query((q) =>
+      const one = await source.query<Record>((q) =>
         q.findRecord({ type: 'one', id: '1' })
       );
-      const two = await source.query((q) =>
+      const two = await source.query<Record>((q) =>
         q.findRecord({ type: 'two', id: '2' })
       );
       assert.ok(one, 'one exists');
       assert.ok(two, 'two exists');
       assert.deepEqual(
-        one.relationships.two.data,
+        one.relationships?.two.data,
         { type: 'two', id: '2' },
         'one links to two'
       );
       assert.deepEqual(
-        two.relationships.one.data,
+        two.relationships?.one.data,
         { type: 'one', id: '1' },
         'two links to one'
       );
@@ -622,8 +635,11 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
       source.update((t) => t.removeRecord(two));
 
       assert.equal(
-        (await source.query((q) => q.findRecord({ type: 'one', id: '1' })))
-          .relationships.two.data,
+        (
+          await source.query<Record>((q) =>
+            q.findRecord({ type: 'one', id: '1' })
+          )
+        ).relationships?.two.data,
         null,
         'ones link to two got removed'
       );
@@ -712,12 +728,12 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
 
     let result = await source.update((t) => t.addRecord(earth));
 
-    delete earth.relationships;
+    delete (earth as any).relationships;
     assert.deepEqual(result, earth);
 
     result = await source.update((t) => t.updateRecord(jupiter));
 
-    delete jupiter.relationships;
+    delete (jupiter as any).relationships;
     assert.deepEqual(result, jupiter);
 
     assert.deepEqual(
@@ -1055,150 +1071,151 @@ QUnit.module('SQLSource (legacy)', function (hooks) {
     }
   );
 
-  QUnit.skip('#query can perform relatedRecord filters', async function (
-    assert
-  ) {
-    let jupiter = {
-      type: 'planet',
-      id: 'jupiter',
-      attributes: {
-        name: 'Jupiter',
-        sequence: 5,
-        classification: 'gas giant',
-        atmosphere: true,
-      },
-      relationships: {
-        moons: {
-          data: [
-            { type: 'moon', id: 'europa' },
-            { type: 'moon', id: 'ganymede' },
-            { type: 'moon', id: 'callisto' },
-          ],
+  QUnit.skip(
+    '#query can perform relatedRecord filters',
+    async function (assert) {
+      let jupiter = {
+        type: 'planet',
+        id: 'jupiter',
+        attributes: {
+          name: 'Jupiter',
+          sequence: 5,
+          classification: 'gas giant',
+          atmosphere: true,
         },
-      },
-    };
-    let earth = {
-      type: 'planet',
-      id: 'earth',
-      attributes: {
-        name: 'Earth',
-        sequence: 3,
-        classification: 'terrestrial',
-        atmosphere: true,
-      },
-      relationships: { moons: { data: [{ type: 'moon', id: 'moon' }] } },
-    };
-    let mars = {
-      type: 'planet',
-      id: 'mars',
-      attributes: {
-        name: 'Mars',
-        sequence: 4,
-        classification: 'terrestrial',
-        atmosphere: true,
-      },
-      relationships: {
-        moons: {
-          data: [
-            { type: 'moon', id: 'phobos' },
-            { type: 'moon', id: 'deimos' },
-          ],
+        relationships: {
+          moons: {
+            data: [
+              { type: 'moon', id: 'europa' },
+              { type: 'moon', id: 'ganymede' },
+              { type: 'moon', id: 'callisto' },
+            ],
+          },
         },
-      },
-    };
-    let mercury = {
-      type: 'planet',
-      id: 'mercury',
-      attributes: {
-        name: 'Mercury',
-        sequence: 1,
-        classification: 'terrestrial',
-        atmosphere: false,
-      },
-    };
-    let theMoon = {
-      id: 'moon',
-      type: 'moon',
-      attributes: { name: 'The moon' },
-      relationships: { planet: { data: { type: 'planet', id: 'earth' } } },
-    };
-    let europa = {
-      id: 'europa',
-      type: 'moon',
-      attributes: { name: 'Europa' },
-      relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
-    };
-    let ganymede = {
-      id: 'ganymede',
-      type: 'moon',
-      attributes: { name: 'Ganymede' },
-      relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
-    };
-    let callisto = {
-      id: 'callisto',
-      type: 'moon',
-      attributes: { name: 'Callisto' },
-      relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
-    };
-    let phobos = {
-      id: 'phobos',
-      type: 'moon',
-      attributes: { name: 'Phobos' },
-      relationships: { planet: { data: { type: 'planet', id: 'mars' } } },
-    };
-    let deimos = {
-      id: 'deimos',
-      type: 'moon',
-      attributes: { name: 'Deimos' },
-      relationships: { planet: { data: { type: 'planet', id: 'mars' } } },
-    };
-    let titan = {
-      id: 'titan',
-      type: 'moon',
-      attributes: { name: 'titan' },
-      relationships: {},
-    };
+      };
+      let earth = {
+        type: 'planet',
+        id: 'earth',
+        attributes: {
+          name: 'Earth',
+          sequence: 3,
+          classification: 'terrestrial',
+          atmosphere: true,
+        },
+        relationships: { moons: { data: [{ type: 'moon', id: 'moon' }] } },
+      };
+      let mars = {
+        type: 'planet',
+        id: 'mars',
+        attributes: {
+          name: 'Mars',
+          sequence: 4,
+          classification: 'terrestrial',
+          atmosphere: true,
+        },
+        relationships: {
+          moons: {
+            data: [
+              { type: 'moon', id: 'phobos' },
+              { type: 'moon', id: 'deimos' },
+            ],
+          },
+        },
+      };
+      let mercury = {
+        type: 'planet',
+        id: 'mercury',
+        attributes: {
+          name: 'Mercury',
+          sequence: 1,
+          classification: 'terrestrial',
+          atmosphere: false,
+        },
+      };
+      let theMoon = {
+        id: 'moon',
+        type: 'moon',
+        attributes: { name: 'The moon' },
+        relationships: { planet: { data: { type: 'planet', id: 'earth' } } },
+      };
+      let europa = {
+        id: 'europa',
+        type: 'moon',
+        attributes: { name: 'Europa' },
+        relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
+      };
+      let ganymede = {
+        id: 'ganymede',
+        type: 'moon',
+        attributes: { name: 'Ganymede' },
+        relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
+      };
+      let callisto = {
+        id: 'callisto',
+        type: 'moon',
+        attributes: { name: 'Callisto' },
+        relationships: { planet: { data: { type: 'planet', id: 'jupiter' } } },
+      };
+      let phobos = {
+        id: 'phobos',
+        type: 'moon',
+        attributes: { name: 'Phobos' },
+        relationships: { planet: { data: { type: 'planet', id: 'mars' } } },
+      };
+      let deimos = {
+        id: 'deimos',
+        type: 'moon',
+        attributes: { name: 'Deimos' },
+        relationships: { planet: { data: { type: 'planet', id: 'mars' } } },
+      };
+      let titan = {
+        id: 'titan',
+        type: 'moon',
+        attributes: { name: 'titan' },
+        relationships: {},
+      };
 
-    await source.update((t) => [
-      t.addRecord(jupiter),
-      t.addRecord(earth),
-      t.addRecord(mars),
-      t.addRecord(mercury),
-      t.addRecord(theMoon),
-      t.addRecord(europa),
-      t.addRecord(ganymede),
-      t.addRecord(callisto),
-      t.addRecord(phobos),
-      t.addRecord(deimos),
-      t.addRecord(titan),
-    ]);
-    assert.deepEqual(
-      await source.query((q) =>
-        q.findRecords('moon').filter({ relation: 'planet', record: earth })
-      ),
-      [theMoon]
-    );
-    assert.deepEqual(
-      await source.query((q) =>
-        q.findRecords('moon').filter({ relation: 'planet', record: jupiter })
-      ),
-      [europa, ganymede, callisto]
-    );
-    assert.deepEqual(
-      await source.query((q) =>
-        q.findRecords('moon').filter({ relation: 'planet', record: mercury })
-      ),
-      []
-    );
-    assert.deepEqual(
-      await source.query((q) =>
-        q
-          .findRecords('moon')
-          .filter({ relation: 'planet', record: [earth, mars] })
-      ),
-      [theMoon, phobos, deimos]
-    );
-  });
+      await source.update((t) => [
+        t.addRecord(jupiter),
+        t.addRecord(earth),
+        t.addRecord(mars),
+        t.addRecord(mercury),
+        t.addRecord(theMoon),
+        t.addRecord(europa),
+        t.addRecord(ganymede),
+        t.addRecord(callisto),
+        t.addRecord(phobos),
+        t.addRecord(deimos),
+        t.addRecord(titan),
+      ]);
+      assert.deepEqual(
+        await source.query((q) =>
+          q.findRecords('moon').filter({ relation: 'planet', record: earth })
+        ),
+        [theMoon]
+      );
+      assert.deepEqual(
+        await source.query((q) =>
+          q.findRecords('moon').filter({ relation: 'planet', record: jupiter })
+        ),
+        [europa, ganymede, callisto]
+      );
+      assert.deepEqual(
+        await source.query((q) =>
+          q.findRecords('moon').filter({ relation: 'planet', record: mercury })
+        ),
+        []
+      );
+      assert.deepEqual(
+        await source.query((q) =>
+          q
+            .findRecords('moon')
+            .filter({ relation: 'planet', record: [earth, mars] })
+        ),
+        [theMoon, phobos, deimos]
+      );
+    }
+  );
 
   test('#query can perform a complex attribute filter by value', async function (assert) {
     let jupiter = {

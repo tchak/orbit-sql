@@ -1,11 +1,11 @@
-import { Schema, RecordNotFoundException } from '@orbit/data';
+import { Record, RecordSchema, RecordNotFoundException } from '@orbit/records';
 
 import SQLSource from '../src';
 
 QUnit.config.testTimeout = 1000;
 
 QUnit.module('SQLSource', function (hooks) {
-  let schema: Schema;
+  let schema: RecordSchema;
   let source: SQLSource;
 
   const author1 = {
@@ -37,7 +37,7 @@ QUnit.module('SQLSource', function (hooks) {
   };
 
   hooks.beforeEach(async function () {
-    schema = new Schema({
+    schema = new RecordSchema({
       models: {
         author: {
           attributes: {
@@ -46,8 +46,8 @@ QUnit.module('SQLSource', function (hooks) {
           },
           relationships: {
             articles: {
-              type: 'hasMany',
-              model: 'article',
+              kind: 'hasMany',
+              type: 'article',
               inverse: 'author',
             },
           },
@@ -61,13 +61,13 @@ QUnit.module('SQLSource', function (hooks) {
           },
           relationships: {
             author: {
-              type: 'hasOne',
-              model: 'author',
+              kind: 'hasOne',
+              type: 'author',
               inverse: 'articles',
             },
             tags: {
-              type: 'hasMany',
-              model: 'tag',
+              kind: 'hasMany',
+              type: 'tag',
               inverse: 'articles',
             },
           },
@@ -78,8 +78,8 @@ QUnit.module('SQLSource', function (hooks) {
           },
           relationships: {
             articles: {
-              type: 'hasMany',
-              model: 'article',
+              kind: 'hasMany',
+              type: 'article',
               inverse: 'tags',
             },
           },
@@ -218,10 +218,10 @@ QUnit.module('SQLSource', function (hooks) {
 
   QUnit.module('addRecord', function () {
     QUnit.test('with attribute', async function (assert) {
-      const record = await source.update((t) => t.addRecord(article2));
+      const record = await source.update<Record>((t) => t.addRecord(article2));
       assert.equal(record.type, article2.type);
       assert.equal(record.id, article2.id);
-      assert.equal(record.attributes.title, article2.attributes.title);
+      assert.equal(record.attributes?.title, article2.attributes.title);
     });
   });
 
@@ -246,7 +246,7 @@ QUnit.module('SQLSource', function (hooks) {
       });
 
       QUnit.test('will update', async function (assert) {
-        const record = await source.update((t) =>
+        const record = await source.update<Record>((t) =>
           t.updateRecord({
             type: 'article',
             id: '1',
@@ -257,7 +257,7 @@ QUnit.module('SQLSource', function (hooks) {
         );
         assert.equal(record.type, article1.type);
         assert.equal(record.id, article1.id);
-        assert.equal(record.attributes.title, 'Article 1 bis');
+        assert.equal(record.attributes?.title, 'Article 1 bis');
       });
     });
   });
@@ -320,7 +320,7 @@ QUnit.module('SQLSource', function (hooks) {
       });
 
       QUnit.test('will replace attribute', async function (assert) {
-        const record = await source.update((t) =>
+        const record = await source.update<Record>((t) =>
           t.replaceAttribute(
             {
               type: 'article',
@@ -332,12 +332,12 @@ QUnit.module('SQLSource', function (hooks) {
         );
         assert.equal(record.type, article1.type);
         assert.equal(record.id, article1.id);
-        assert.equal(record.attributes.title, 'Article 1 bis');
+        assert.equal(record.attributes?.title, 'Article 1 bis');
 
-        const { attributes } = await source.query((q) =>
+        const { attributes } = await source.query<Record>((q) =>
           q.findRecord(article1)
         );
-        assert.equal(attributes.title, 'Article 1 bis');
+        assert.equal(attributes?.title, 'Article 1 bis');
       });
     });
   });
@@ -375,8 +375,25 @@ QUnit.module('SQLSource', function (hooks) {
       hooks.beforeEach(async function () {
         await source.update((t) => [
           t.addRecord(author1),
-          t.addRecord(article2),
+          t.addRecord(article1),
         ]);
+      });
+
+      QUnit.test('will add to related records', async function (assert) {
+        const [{ id, type }] = await source.query<Record[]>((t) =>
+          t.findRelatedRecords(author1, 'articles')
+        );
+        assert.equal(id, '1');
+        assert.equal(type, 'article');
+        await source.update((t) => [
+          t.addRecord(article2),
+          t.addToRelatedRecords(author1, 'articles', article2),
+        ]);
+        const [foundArticle1, foundArticle2] = await source.query<Record[]>(
+          (t) => t.findRelatedRecords(author1, 'articles')
+        );
+        assert.equal(article1.id, foundArticle1.id);
+        assert.equal(article2.id, foundArticle2.id);
       });
     });
   });
@@ -393,7 +410,7 @@ QUnit.module('SQLSource', function (hooks) {
       });
 
       QUnit.test('will remove from related records', async function (assert) {
-        const [{ id, type }] = await source.query((t) =>
+        const [{ id, type }] = await source.query<Record[]>((t) =>
           t.findRelatedRecords(author1, 'articles')
         );
         assert.equal(id, '1');

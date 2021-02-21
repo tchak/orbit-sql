@@ -13,15 +13,15 @@ import {
   FindRelatedRecords,
   FindRecords,
   FindRelatedRecord,
-  Query,
-  QueryExpressionParseError,
+  RecordQuery,
   AttributeSortSpecifier,
   OffsetLimitPageSpecifier,
   RecordIdentity,
   AttributeFilterSpecifier,
-  Schema,
-  QueryExpression,
-} from '@orbit/data';
+  RecordSchema,
+  RecordQueryExpression,
+} from '@orbit/records';
+import { QueryExpressionParseError } from '@orbit/data';
 import Knex, { Config } from 'knex';
 import { QueryBuilder, ModelClass, transaction, Transaction } from 'objection';
 import { tableize, underscore, foreignKey } from 'inflected';
@@ -31,13 +31,13 @@ import { migrateModels } from './migrate-models';
 import { groupRecordsByType } from './utils';
 
 export interface ProcessorSettings {
-  schema: Schema;
+  schema: RecordSchema;
   knex: Config;
   autoMigrate?: boolean;
 }
 
 export class Processor {
-  schema: Schema;
+  schema: RecordSchema;
   autoMigrate: boolean;
 
   protected _config: Config;
@@ -71,17 +71,21 @@ export class Processor {
 
   async patch(operations: RecordOperation[]) {
     return transaction(this._db as Knex, async (trx) => {
-      const result: OrbitRecord[] = [];
+      const data: OrbitRecord[] = [];
       for (let operation of operations) {
-        result.push(await this.processOperation(operation, trx));
+        data.push(await this.processOperation(operation, trx));
       }
-      return result;
+      return data;
     });
   }
 
-  async query(query: Query) {
+  async query(query: RecordQuery) {
     return transaction(this._db as Knex, async (trx) => {
-      return this.processQueryExpression(query.expression, trx);
+      const data: (OrbitRecord | OrbitRecord[] | null)[] = [];
+      for (const expression of query.expressions) {
+        data.push(await this.processQueryExpression(expression, trx));
+      }
+      return data;
     });
   }
 
@@ -109,7 +113,7 @@ export class Processor {
   }
 
   protected processQueryExpression(
-    expression: QueryExpression,
+    expression: RecordQueryExpression,
     trx: Transaction
   ) {
     switch (expression.op) {
@@ -122,7 +126,7 @@ export class Processor {
       case 'findRelatedRecords':
         return this.findRelatedRecords(expression as FindRelatedRecords, trx);
       default:
-        throw new Error(`Unknown query ${expression.op}`);
+        throw new Error(`Unknown query ${expression}`);
     }
   }
 
@@ -366,11 +370,8 @@ export class Processor {
     model: BaseModel,
     relationship: string
   ) {
-    const { model: relatedType } = this.schema.getRelationship(
-      model.orbitType,
-      relationship
-    );
-    const fields = this.fieldsForType(relatedType as string);
+    const relDef = this.schema.getRelationship(model.orbitType, relationship);
+    const fields = this.fieldsForType(relDef?.type as string);
 
     return model.$relatedQuery<BaseModel>(relationship, trx).select(fields);
   }
@@ -391,7 +392,7 @@ export class Processor {
       } else {
         throw new QueryExpressionParseError(
           `Page specifier ${expression.page.kind} not recognized for SQLSource.`,
-          expression.page
+          expression
         );
       }
     }
@@ -415,7 +416,7 @@ export class Processor {
         } else {
           throw new QueryExpressionParseError(
             `Sort specifier ${sortSpecifier.kind} not recognized for SQLSource.`,
-            sortSpecifier
+            expression
           );
         }
       }
@@ -497,13 +498,13 @@ export class Processor {
     }
 
     if (record.relationships) {
-      this.schema.eachRelationship(record.type, (property, { type: kind }) => {
+      this.schema.eachRelationship(record.type, (property, { kind }) => {
         if (record.relationships && record.relationships[property]) {
           if (kind === 'hasOne') {
             const data = record.relationships[property]
               .data as RecordIdentity | null;
             properties[property] = data ? { id: data.id } : null;
-          } else {
+          } else if (kind === 'hasMany') {
             const data = record.relationships[property]
               .data as RecordIdentity[];
             properties[property] = data.map(({ id }) => ({ id }));
@@ -523,7 +524,7 @@ export class Processor {
       fields.push(`${tableName}.${underscore(property)}`);
     });
 
-    this.schema.eachRelationship(type, (property, { type: kind }) => {
+    this.schema.eachRelationship(type, (property, { kind }) => {
       if (kind === 'hasOne') {
         fields.push(`${tableName}.${foreignKey(property)}`);
       }

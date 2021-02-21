@@ -5,16 +5,16 @@ import {
   snakeCaseMappers,
 } from 'objection';
 import {
-  Schema,
+  RecordSchema,
   RecordNotFoundException,
   RecordRelationship,
   Record as OrbitRecord,
-} from '@orbit/data';
+} from '@orbit/records';
 import { foreignKey, tableize } from 'inflected';
 
 import { tableizeJoinTable, castAttributeValue } from './utils';
 
-export class BaseModel extends Model {
+export abstract class BaseModel extends Model {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -22,8 +22,8 @@ export class BaseModel extends Model {
   static get virtualAttributes() {
     return ['orbitSchema', 'orbitType'];
   }
-  orbitSchema: Schema;
-  orbitType: string;
+  abstract get orbitSchema(): RecordSchema;
+  abstract get orbitType(): string;
 
   $beforeInsert() {
     this.createdAt = new Date().toISOString();
@@ -57,7 +57,7 @@ export class BaseModel extends Model {
 
     schema.eachAttribute(type, (property, attribute) => {
       if (result[property] != null) {
-        (attributes as Record<string, unknown>)[property] = castAttributeValue(
+        attributes[property] = castAttributeValue(
           result[property],
           attribute.type
         );
@@ -65,14 +65,14 @@ export class BaseModel extends Model {
       }
     });
 
-    schema.eachRelationship(type, (property, { type: kind, model: type }) => {
+    schema.eachRelationship(type, (property, { kind, type }) => {
       if (kind === 'hasOne') {
-        const id = result[`${property}Id`];
+        const id = result[`${property}Id`] as string | undefined;
         if (id) {
-          (relationships as Record<string, unknown>)[property] = {
+          relationships[property] = {
             data: {
               type: type as string,
-              id: id as string,
+              id: id,
             },
           };
           record.relationships = relationships;
@@ -85,7 +85,7 @@ export class BaseModel extends Model {
 }
 
 export function buildModels(
-  schema: Schema
+  schema: RecordSchema
 ): Record<string, ModelClass<BaseModel>> {
   const models: Record<string, ModelClass<BaseModel>> = {};
 
@@ -97,7 +97,7 @@ export function buildModels(
 }
 
 export function buildModel(
-  schema: Schema,
+  schema: RecordSchema,
   type: string,
   models: Record<string, ModelClass<BaseModel>>
 ): ModelClass<BaseModel> {
@@ -118,72 +118,66 @@ export function buildModel(
 
       static get relationMappings() {
         const relationMappings: Record<string, RelationMapping<BaseModel>> = {};
-        schema.eachRelationship(
-          type,
-          (property, { type: kind, model: type, inverse }) => {
-            if (!inverse || !type) {
-              throw new Error(
-                `SQLSource: "type" and "inverse" are required on a relationship`
-              );
-            }
+        schema.eachRelationship(type, (property, { kind, type, inverse }) => {
+          if (!inverse || !type) {
+            throw new Error(
+              `SQLSource: "type" and "inverse" are required on a relationship`
+            );
+          }
 
-            if (Array.isArray(type)) {
-              throw new Error(
-                `SQLSource: polymorphic types are not supported yet`
-              );
-            }
+          if (Array.isArray(type)) {
+            throw new Error(
+              `SQLSource: polymorphic types are not supported yet`
+            );
+          }
 
-            const relationColumnName = foreignKey(property);
-            const inverseColumnName = foreignKey(inverse);
-            const relationTableName = tableize(type);
-            const relationModel = buildModel(schema, type, models);
-            let relationMapping: RelationMapping<BaseModel>;
+          const relationColumnName = foreignKey(property);
+          const inverseColumnName = foreignKey(inverse);
+          const relationTableName = tableize(type);
+          const relationModel = buildModel(schema, type, models);
+          let relationMapping: RelationMapping<BaseModel>;
 
-            if (kind === 'hasOne') {
+          if (kind === 'hasOne') {
+            relationMapping = {
+              relation: Model.BelongsToOneRelation,
+              modelClass: relationModel,
+              join: {
+                from: `${tableName}.${relationColumnName}`,
+                to: `${relationTableName}.id`,
+              },
+            };
+          } else {
+            const relDef = schema.getRelationship(type, inverse);
+
+            if (relDef?.kind === 'hasMany') {
+              const joinTableName = tableizeJoinTable(property, inverse);
+
               relationMapping = {
-                relation: Model.BelongsToOneRelation,
+                relation: Model.ManyToManyRelation,
                 modelClass: relationModel,
                 join: {
-                  from: `${tableName}.${relationColumnName}`,
+                  from: `${tableName}.id`,
+                  through: {
+                    from: `${joinTableName}.${relationColumnName}`,
+                    to: `${joinTableName}.${inverseColumnName}`,
+                  },
                   to: `${relationTableName}.id`,
                 },
               };
             } else {
-              const { type: inverseKind } = schema.getRelationship(
-                type,
-                inverse
-              );
-
-              if (inverseKind === 'hasMany') {
-                const joinTableName = tableizeJoinTable(property, inverse);
-
-                relationMapping = {
-                  relation: Model.ManyToManyRelation,
-                  modelClass: relationModel,
-                  join: {
-                    from: `${tableName}.id`,
-                    through: {
-                      from: `${joinTableName}.${relationColumnName}`,
-                      to: `${joinTableName}.${inverseColumnName}`,
-                    },
-                    to: `${relationTableName}.id`,
-                  },
-                };
-              } else {
-                relationMapping = {
-                  relation: Model.HasManyRelation,
-                  modelClass: relationModel,
-                  join: {
-                    from: `${tableName}.id`,
-                    to: `${relationTableName}.${inverseColumnName}`,
-                  },
-                };
-              }
+              relationMapping = {
+                relation: Model.HasManyRelation,
+                modelClass: relationModel,
+                join: {
+                  from: `${tableName}.id`,
+                  to: `${relationTableName}.${inverseColumnName}`,
+                },
+              };
             }
-
-            relationMappings[property] = relationMapping;
           }
-        );
+
+          relationMappings[property] = relationMapping;
+        });
 
         return relationMappings;
       }

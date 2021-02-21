@@ -1,5 +1,5 @@
 import { tableize } from 'inflected';
-import { RecordIdentity } from '@orbit/data';
+import { RecordIdentity } from '@orbit/records';
 
 export function tableizeJoinTable(table1: string, table2: string) {
   return [tableize(table1), tableize(table2)].sort().join('_');

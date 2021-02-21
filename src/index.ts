@@ -1,1 +1,1 @@
-export { default, SQLSourceSettings } from './sql-source';
+export { SQLSource as default, SQLSourceSettings } from './sql-source';
