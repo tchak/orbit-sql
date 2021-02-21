@@ -144,7 +144,7 @@ export class Processor {
   }
 
   protected async updateRecord(op: UpdateRecordOperation, trx: Transaction) {
-    const qb = this.queryForType(trx, op.record.type).mergeContext({
+    const qb = this.queryForType(trx, op.record.type).context({
       recordId: op.record.id,
     });
     const data = this.parseOrbitRecord(op.record);
@@ -159,7 +159,7 @@ export class Processor {
 
   protected async removeRecord(op: RemoveRecordOperation, trx: Transaction) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
 
@@ -174,7 +174,7 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
 
@@ -190,7 +190,7 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
     const relatedId = op.relatedRecord ? op.relatedRecord.id : null;
@@ -210,7 +210,7 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
     const relatedIds = op.relatedRecords.map(({ id }) => id);
@@ -235,7 +235,7 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
     const relatedId = op.relatedRecord.id;
@@ -251,7 +251,7 @@ export class Processor {
     trx: Transaction
   ) {
     const { type, id } = op.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
 
@@ -267,7 +267,7 @@ export class Processor {
 
   protected async findRecord(expression: FindRecord, trx: Transaction) {
     const { id, type } = expression.record;
-    const qb = this.queryForType(trx, type).mergeContext({
+    const qb = this.queryForType(trx, type).context({
       recordId: id,
     });
 
@@ -315,7 +315,7 @@ export class Processor {
       relationship,
     } = expression;
 
-    let qb = this.queryForType(trx, type).mergeContext({
+    let qb = this.queryForType(trx, type).context({
       recordId: id,
     });
     const parent = (await qb.findById(id)) as BaseModel;
@@ -334,7 +334,7 @@ export class Processor {
       relationship,
     } = expression;
 
-    let qb = this.queryForType(trx, type).mergeContext({
+    let qb = this.queryForType(trx, type).context({
       recordId: id,
     });
     const parent = (await qb.findById(id)) as BaseModel;
