@@ -15,9 +15,9 @@
   "repository": "https://github.com/tchak/orbit-sql",
   "license": "MIT",
   "dependencies": {
-    "@orbit/records": "^0.17.0-beta.12",
+    "@orbit/records": "^0.17.0-beta.14",
     "inflected": "^2.1.0",
-    "knex": "^0.21.17",
+    "knex": "^0.21.18",
     "objection": "^2.2.14"
   },
   "scripts": {
@@ -31,17 +31,17 @@
     "@types/inflected": "^1.1.29",
     "@types/node": "^14.14.31",
     "@types/qunit": "^2.11.1",
-    "@typescript-eslint/eslint-plugin": "^4.15.1",
-    "@typescript-eslint/parser": "^4.15.1",
-    "eslint": "^7.20.0",
-    "eslint-config-prettier": "^7.2.0",
+    "@typescript-eslint/eslint-plugin": "^4.15.2",
+    "@typescript-eslint/parser": "^4.15.2",
+    "eslint": "^7.21.0",
+    "eslint-config-prettier": "^8.1.0",
     "eslint-plugin-prettier": "^3.3.1",
     "prettier": "^2.2.1",
     "qunit": "^2.14.0",
     "release-it": "^14.4.1",
     "sqlite3": "^5.0.2",
     "ts-node": "^9.1.1",
-    "typescript": "^4.1.5"
+    "typescript": "^4.2.2"
   },
   "publishConfig": {
     "access": "public",
