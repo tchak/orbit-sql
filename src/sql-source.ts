@@ -3,7 +3,6 @@ import { queryable, updatable, RequestOptions } from '@orbit/data';
 import {
   RecordSourceQueryOptions,
   RecordSchema,
-  RecordOperation,
   RecordSourceSettings,
   RecordQueryable,
   RecordUpdatable,
@@ -90,13 +89,14 @@ export class SQLSource extends RecordSource<
 
   async _update(transform: RecordTransform): Promise<any> {
     if (!this.transformLog.contains(transform.id)) {
-      const data = await this._processor.patch(
-        transform.operations as RecordOperation[]
-      );
+      const operations = Array.isArray(transform.operations)
+        ? transform.operations
+        : [transform.operations];
+      const data = await this._processor.patch(operations);
       await this.transformed([transform]);
       return {
         transform: [transform],
-        data: transform.operations.length === 1 ? data[0] : data,
+        data: Array.isArray(transform.operations) ? data : data[0],
       };
     }
   }
@@ -109,7 +109,7 @@ export class SQLSource extends RecordSource<
     const data = await this._processor.query(query);
     return {
       transform: [],
-      data: query.expressions.length === 1 ? data[0] : data,
+      data: Array.isArray(data) ? data[0] : data,
     };
   }
 }

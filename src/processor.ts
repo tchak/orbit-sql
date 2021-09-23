@@ -82,7 +82,11 @@ export class Processor {
   async query(query: RecordQuery) {
     return transaction(this._db as Knex, async (trx) => {
       const data: (OrbitRecord | OrbitRecord[] | null)[] = [];
-      for (const expression of query.expressions) {
+      const expressions = Array.isArray(query.expressions)
+        ? query.expressions
+        : [query.expressions];
+
+      for (const expression of expressions) {
         data.push(await this.processQueryExpression(expression, trx));
       }
       return data;
