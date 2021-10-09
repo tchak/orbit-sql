@@ -10,7 +10,7 @@ QUnit.module('SQLSource', function (hooks) {
 
   const author1 = {
     type: 'author',
-    id: '1',
+    id: '11111111-1111-1111-1111-111111111111',
     attributes: {
       firstName: 'Paul',
       lastName: 'Chavard',
@@ -18,19 +18,19 @@ QUnit.module('SQLSource', function (hooks) {
   };
   const article1 = {
     type: 'article',
-    id: '1',
+    id: '22222222-2222-2222-2222-222222222222',
     attributes: {
       title: 'Article 1',
     },
     relationships: {
       author: {
-        data: { type: 'author', id: '1' },
+        data: { type: 'author', id: '11111111-1111-1111-1111-111111111111' },
       },
     },
   };
   const article2 = {
     type: 'article',
-    id: '2',
+    id: '33333333-3333-3333-3333-333333333333',
     attributes: {
       title: 'Article 2',
     },
@@ -90,8 +90,12 @@ QUnit.module('SQLSource', function (hooks) {
     source = new SQLSource({
       schema,
       knex: {
-        client: 'sqlite3',
-        connection: { filename: ':memory:' },
+        client: 'pg',
+        connection: {
+          database: 'postgres_db',
+          password: 'postgres_password',
+          user: 'postgres_user',
+        },
         useNullAsDefault: true,
       },
     });
@@ -130,7 +134,10 @@ QUnit.module('SQLSource', function (hooks) {
 
       QUnit.test('find', async function (assert) {
         let record = await source.query((q) =>
-          q.findRecord({ type: 'author', id: '1' })
+          q.findRecord({
+            type: 'author',
+            id: '11111111-1111-1111-1111-111111111111',
+          })
         );
         assert.deepEqual(record, author1, 'should find the record');
       });
