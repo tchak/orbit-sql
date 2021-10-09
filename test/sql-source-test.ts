@@ -14,6 +14,7 @@ QUnit.module('SQLSource', function (hooks) {
     attributes: {
       firstName: 'Paul',
       lastName: 'Chavard',
+      admin: true,
     },
   };
   const article1 = {
@@ -43,6 +44,7 @@ QUnit.module('SQLSource', function (hooks) {
           attributes: {
             firstName: { type: 'string' },
             lastName: { type: 'string' },
+            admin: { type: 'boolean' },
           },
           relationships: {
             articles: {
