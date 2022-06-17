@@ -10,7 +10,7 @@ export function castAttributeValue(value: unknown, type?: string) {
   const isString = typeOfValue === 'string';
   const isNumber = typeOfValue === 'number';
   if (type === 'boolean') {
-    return value === 1;
+    return Boolean(value);
   } else if (type === 'datetime' && (isString || isNumber)) {
     return new Date(value as string | number);
   }
